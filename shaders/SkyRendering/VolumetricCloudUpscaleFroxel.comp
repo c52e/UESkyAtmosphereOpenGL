@@ -1,0 +1,23 @@
+#version 460
+
+#include "VolumetricCloudCommon.glsl"
+
+layout(binding = 0) uniform sampler2D checkerboard_depth;
+layout(binding = 1) uniform sampler2D depth_texture;
+layout(binding = 2) uniform sampler3D light_froxel;
+
+layout(binding = 0, rgba16f) uniform image2D hdr_image;
+
+void main() {
+    ivec2 kImageSize = imageSize(hdr_image);
+    vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / vec2(kImageSize);
+    float depth = texelFetch(depth_texture, ivec2(gl_GlobalInvocationID.xy), 0).x;
+    
+    vec3 frag_pos = UvDepthToPos(uInvMVP, uv, depth);
+    float dist = depth != 0.0 ? length(frag_pos - uCameraPos) : uLightFroxelMaxDist;
+    vec4 froxel = texture(light_froxel, vec3(uv, dist / uLightFroxelMaxDist));
+
+    vec4 color = imageLoad(hdr_image, ivec2(gl_GlobalInvocationID.xy));
+    color.rgb = color.rgb * (froxel.a <= kMinTransmittance ? 0 : froxel.a) + froxel.rgb;
+    imageStore(hdr_image, ivec2(gl_GlobalInvocationID.xy), color);
+}

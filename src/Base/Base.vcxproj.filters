@@ -55,19 +55,22 @@
     <ClInclude Include="include\ObjectsSet.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\PerformanceMarker.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="include\Serialization.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="include\SMAA.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\ImageWriter.h">
+    <ClInclude Include="include\IBL.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="include\IBL.h">
+    <ClInclude Include="include\log.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\Profiler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="include\GltfModel.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -87,7 +90,7 @@
     <ClCompile Include="src\HDRBuffer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\StbImage.cpp">
+    <ClCompile Include="src\tinygltf.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\Mesh.cpp">
@@ -118,6 +121,15 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\IBL.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\log.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\Profiler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\GltfModel.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

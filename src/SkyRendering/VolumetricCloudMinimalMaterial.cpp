@@ -2,6 +2,8 @@
 
 #include <imgui.h>
 
+#include "GLProgram.h"
+
 struct VolumetricCloudMinimalMaterial::BufferData {
 	glm::vec3 padding;
 	float uDensity;
@@ -12,8 +14,8 @@ VolumetricCloudMinimalMaterial::VolumetricCloudMinimalMaterial() {
 	glNamedBufferStorage(buffer_.id(), sizeof(BufferData), NULL, GL_DYNAMIC_STORAGE_BIT);
 }
 
-std::string VolumetricCloudMinimalMaterial::ShaderPath() {
-	return "../shaders/SkyRendering/VolumetricCloudMaterialMinimal.glsl";
+std::string VolumetricCloudMinimalMaterial::ShaderSrc() {
+	return ReadWithPreprocessor("../shaders/SkyRendering/VolumetricCloudMaterialMinimal.glsl");
 }
 
 void VolumetricCloudMinimalMaterial::Bind() {

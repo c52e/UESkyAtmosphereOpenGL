@@ -148,7 +148,7 @@
         "shadow_distance_": 2.0,
         "shadow_froxel_max_distance": 30.63599967956543,
         "shadow_map_max_distance": 48.26599884033203,
-        "shadow_steps_": 5.0,
+        "shadow_steps_": 5,
         "sun_illuminance_scale_": 1.0,
         "sun_multiscattering_sigma_scale": 0.30000001192092896,
         "thickness_": 3.3959999084472656

@@ -6,7 +6,7 @@ class VolumetricCloudMinimalMaterial : public IVolumetricCloudMaterial {
 public:
     VolumetricCloudMinimalMaterial();
 
-    std::string ShaderPath() override;
+    std::string ShaderSrc() override;
 
     void Bind() override;
 

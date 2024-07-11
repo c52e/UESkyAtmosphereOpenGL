@@ -24,7 +24,11 @@ public:
 
 	void Error(const std::string& msg);
 
-	void ScreenShot(const char* path);
+	enum ImageFormat {
+		PNG,
+		JPG,
+	};
+	void ScreenShot(const std::string& path_no_ext, ImageFormat format);
 
 protected:
 	GLFWwindow* window;

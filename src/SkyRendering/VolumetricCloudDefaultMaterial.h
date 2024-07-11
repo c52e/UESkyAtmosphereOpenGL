@@ -17,6 +17,8 @@ struct TextureWithInfo {
     int channel = 1;
 };
 
+float CalKLod(const TextureWithInfo& tex, glm::vec2 viewport, const Camera& camera);
+
 template<class BufferType>
 class DynamicTexture {
 public:
@@ -63,6 +65,13 @@ struct NoiseCreateInfo {
     void DrawGUI();
 };
 
+STRUCT_FIELD_DECLARATION_BEGIN(NoiseCreateInfo, ISerializable)
+    STRUCT_FIELD_DECLARE(seed)
+    STRUCT_FIELD_DECLARE(base_frequency)
+    STRUCT_FIELD_DECLARE(remap_min)
+    STRUCT_FIELD_DECLARE(remap_max)
+STRUCT_FIELD_DECLARATION_END()
+
 struct CloudMapBuffer {
     NoiseCreateInfo uDensity{ 0, 3, 0.35f, 0.75f };
     NoiseCreateInfo uHeight{ 0, 5, 0.8f, 0.4f };
@@ -85,9 +94,10 @@ struct DisplacementBuffer {
 
 class VolumetricCloudDefaultMaterialCommon : public ISerializable {
 public:
-    VolumetricCloudDefaultMaterialCommon();
+    VolumetricCloudDefaultMaterialCommon(int cloud_map_size = 512, int detail_size = 128, int displacement_size = 128);
 
-    void Update(glm::vec2 viewport, const Camera& camera, const glm::dvec2& offset_from_first, glm::vec2& additional_delta);
+    using UpdateParam = IVolumetricCloudMaterial::UpdateParam;
+    void Update(const UpdateParam& param, glm::vec2& additional_delta);
 
     void Bind();
 
@@ -95,19 +105,12 @@ public:
 
     void DrawGUI();
 
-private:
-#define DECLARE_NOISE(name) \
-    FIELD_DECLARE(name.seed) \
-    FIELD_DECLARE(name.base_frequency) \
-    FIELD_DECLARE(name.remap_min) \
-    FIELD_DECLARE(name.remap_max)
-
     FIELD_DECLARATION_BEGIN(ISerializable)
-        DECLARE_NOISE(cloud_map_.buffer.uDensity)
-        DECLARE_NOISE(cloud_map_.buffer.uHeight)
-        DECLARE_NOISE(detail_.buffer.uPerlin)
-        DECLARE_NOISE(detail_.buffer.uWorley)
-        DECLARE_NOISE(displacement_.buffer.uPerlin)
+        FIELD_DECLARE(cloud_map_.buffer.uDensity)
+        FIELD_DECLARE(cloud_map_.buffer.uHeight)
+        FIELD_DECLARE(detail_.buffer.uPerlin)
+        FIELD_DECLARE(detail_.buffer.uWorley)
+        FIELD_DECLARE(displacement_.buffer.uPerlin)
         FIELD_DECLARE(cloud_map_.texture.repeat_size)
         FIELD_DECLARE(detail_.texture.repeat_size)
         FIELD_DECLARE(displacement_.texture.repeat_size)
@@ -120,10 +123,14 @@ private:
         FIELD_DECLARE(minfilter_displacement_)
     FIELD_DECLARATION_END()
 
-#undef DECLARE_NOISE
+    DynamicTexture<CloudMapBuffer> cloud_map_;
+    DynamicTexture<DetailBuffer> detail_;
+    DynamicTexture<DisplacementBuffer> displacement_;
+
+private:
     GLBuffer buffer_;
 
-    float lod_bias_ = 2.75f;
+    float lod_bias_ = 0.75f;
     float density_ = 15.0f;
     float wind_speed_ = 0.05f;
     float detail_wind_magnify_ = 1.0f;
@@ -133,19 +140,15 @@ private:
     Samplers::MipmapMin minfilter_displacement_ = Samplers::MipmapMin::NEAREST_MIPMAP_NEAREST;
 
     glm::dvec2 detail_offset_from_first_{ 0, 0 };
-
-    DynamicTexture<CloudMapBuffer> cloud_map_;
-    DynamicTexture<DetailBuffer> detail_;
-    DynamicTexture<DisplacementBuffer> displacement_;
 };
 
 class VolumetricCloudDefaultMaterial0 : public IVolumetricCloudMaterial {
 public:
     VolumetricCloudDefaultMaterial0();
 
-    std::string ShaderPath() override;
+    std::string ShaderSrc() override;
 
-    void Update(glm::vec2 viewport, const Camera& camera, const glm::dvec2& offset_from_first, glm::vec2& additional_delta) override;
+    void Update(const UpdateParam& param, glm::vec2& additional_delta) override;
 
     void Bind() override;
 
@@ -172,9 +175,9 @@ class VolumetricCloudDefaultMaterial1 : public IVolumetricCloudMaterial {
 public:
     VolumetricCloudDefaultMaterial1();
 
-    std::string ShaderPath() override;
+    std::string ShaderSrc() override;
 
-    void Update(glm::vec2 viewport, const Camera& camera, const glm::dvec2& offset_from_first, glm::vec2& additional_delta) override;
+    void Update(const UpdateParam& param, glm::vec2& additional_delta) override;
 
     void Bind() override;
 

@@ -17,8 +17,6 @@
 namespace reflection {
 
 class IAutoImGui : public IReflectionBase<IAutoImGui> {
-public:
-    void DrawAutoImGui();
 };
 
 template<>
@@ -26,6 +24,12 @@ class IType<IAutoImGui> {
 public:
     virtual void DrawAutoImGui(void* addr, const char* name, const UserdataBase* userdata) const = 0;
 };
+
+template<class T>
+void DrawAutoImGui(T& object, const char* name = nullptr) {
+    const Type<IAutoImGui, T>::Userdata userdata = {};
+    Type<IAutoImGui, T>::GetIType()->DrawAutoImGui(&object, name, &userdata);
+}
 
 template<>
 class Type<IAutoImGui, int> : public TypeBase<IAutoImGui, int> {
@@ -98,7 +102,7 @@ private:
 };
 
 template<class T>
-class Type<IAutoImGui, T, std::enable_if_t<std::is_base_of_v<IAutoImGui, T>>>
+class Type<IAutoImGui, T, std::enable_if_t<std::is_base_of_v<IAutoImGui, T> || IsReflectableStruct<IAutoImGui, T>::value>>
     : public TypeBase<IAutoImGui, T> {
 public:
     using ValueType = T;
@@ -106,7 +110,7 @@ public:
     void DrawAutoImGui(void* addr, const char* name, const UserdataBase* userdata) const override {
         auto& v = *static_cast<ValueType*>(addr);
         if (ScopeImGuiTreeNode tree(name); tree) {
-            for (const auto& [name, fun] : static_cast<const IAutoImGui&>(v).GetFieldTable()) {
+            for (const auto& [name, fun] : GetFieldTable(v, static_cast<IAutoImGui*>(nullptr))) {
                 auto info = fun(&v);
                 info.type->DrawAutoImGui(info.address, name.c_str(), info.userdata);
             }
@@ -305,12 +309,5 @@ template<template <class _Kty, class _Ty, class _Hasher, class _Keyeq, class _Al
             _AutoImGuiMapTypeHelper<ValueType>::DrawAutoImGui(addr, name, userdata);
         }
 };
-
-inline void IAutoImGui::DrawAutoImGui() {
-    for (const auto& [name, fun] : GetFieldTable()) {
-        auto info = fun(this);
-        info.type->DrawAutoImGui(info.address, name.c_str(), info.userdata);
-    }
-}
 
 } // namespace reflection

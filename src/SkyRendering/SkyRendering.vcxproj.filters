@@ -41,7 +41,7 @@
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudRender.comp">
       <Filter>shaders</Filter>
     </None>
-    <None Include="..\..\shaders\SkyRendering\EarthRender.frag">
+    <None Include="..\..\shaders\SkyRendering\EarthRender.glsl">
       <Filter>shaders</Filter>
     </None>
     <None Include="..\..\shaders\SkyRendering\Common.glsl">
@@ -96,6 +96,48 @@
       <Filter>shaders</Filter>
     </None>
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudMaterialVoxel.glsl">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\Terrain.glsl">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\VolumetricCloudShadowRender.comp">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\ShadowFroxelAccumulate.comp">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\VolumetricCloudLightFroxel.comp">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\VolumetricCloudRenderCommon.glsl">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\VolumetricCloudLightFroxelAccumulate.comp">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\VolumetricCloudUpscaleFroxel.comp">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\AtmosphereMultiscatteringLut.comp">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\AtmosphereTransmittanceLut.comp">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\AtmosphereScatteringLut.comp">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\AtmosphereDirectIrradiance.comp">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\AtmosphereIndirectIrradiance.comp">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\AtmosphereMultipleScattering.comp">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="..\..\shaders\SkyRendering\AtmosphereScatteringDensity.comp">
       <Filter>shaders</Filter>
     </None>
   </ItemGroup>

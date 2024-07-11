@@ -6,9 +6,9 @@ class VolumetricCloudVoxelMaterial : public IVolumetricCloudMaterial {
 public:
     VolumetricCloudVoxelMaterial();
 
-    std::string ShaderPath() override;
+    std::string ShaderSrc() override;
 
-    void Update(glm::vec2 viewport, const Camera& camera, const glm::dvec2& offset_from_first, glm::vec2& additional_delta) override;
+    void Update(const UpdateParam& param, glm::vec2& additional_delta) override;
 
     void Bind() override;
 
@@ -31,7 +31,7 @@ private:
     GLSampler sampler_;
     glm::ivec3 voxel_dim_{ 1,1,1 };
 
-    float lod_bias_ = 2.75f;
+    float lod_bias_ = 0.75f;
     float density_ = 20.0f;
     glm::vec2 base_{ 0.0f, 0.0f };
     glm::vec2 width_{ 2.0f, 2.0f };

@@ -14,8 +14,10 @@ struct Material {
     GLuint albedo_texture = 0;
     float metallic_factor = 0.0f;
     float roughness_factor = 1.0f;
+    float ao_factor = 1.0f;
     GLuint normal_texture = 0;
-    GLuint orm_texture = 0;
+    GLuint metallic_roughness_texture = 0;
+    GLuint ao_texture = 0;
 };
 
 class MeshObject {
@@ -31,6 +33,7 @@ public:
 
     void DrawGui();
 
+    bool visible_ = true;
     Material material;
 
 protected:

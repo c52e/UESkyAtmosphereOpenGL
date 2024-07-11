@@ -15,9 +15,11 @@ public:
 
 	glm::mat4 ViewMatrix() const;
 
-	glm::mat4 ProjectionMatrix() const;
+	glm::mat4 ProjectionInvertedInfinity() const;
 
-	glm::mat4 ViewProjection() const { return ProjectionMatrix()* ViewMatrix(); }
+	glm::mat4 ViewProjection() const { return ProjectionInvertedInfinity()* ViewMatrix(); }
+
+	glm::mat4 ProjectionFarClip(float zFar) const;
 
 	glm::vec3 position() const { return position_; }
 
@@ -35,21 +37,22 @@ public:
 
 	void Rotate(float dPitch, float dYaw);
 
+	float tangent_half_fovy() const {
+		return glm::tan(glm::radians(fovy) * 0.5f);
+	}
+
 	float fovy = 45.f;
 	float zNear = 1e-1f;
-	float zFar = 1e3f;
 
 	FIELD_DECLARATION_BEGIN(ISerializable)
 		FIELD_DECLARE(fovy)
 		FIELD_DECLARE(zNear)
-		FIELD_DECLARE(zFar)
 		FIELD_DECLARE(position_)
 		FIELD_DECLARE(front_)
 		FIELD_DECLARE(right_)
 		FIELD_DECLARE(up_)
 		FIELD_DECLARE(yaw_)
 		FIELD_DECLARE(pitch_)
-		FIELD_DECLARE(aspect_)
 	FIELD_DECLARATION_END()
 
 private:

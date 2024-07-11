@@ -59,7 +59,7 @@ glm::mat4 ComputeLightMatrix(float center_distance, float theta, float phi,
 	auto up_direction = light_direction.y == 1.0f ? glm::vec3(1, 0, 0):
 		glm::normalize(glm::cross(right_direction, light_direction));
 	auto view_matrix = glm::lookAt(position, position - light_direction, up_direction);
-	auto projection_matrix = glm::ortho(left, right, bottom, top, near, far);
+	auto projection_matrix = glm::orthoRH_ZO(left, right, bottom, top, near, far);
 	
 	return projection_matrix * view_matrix;
 }

@@ -8,10 +8,12 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
+#include <stb_image_write.h>
 
-#include "PerformanceMarker.h"
 #include "Utils.h"
-#include "ImageWriter.h"
+#include "gl.hpp"
+#include "log.h"
+#include "Profiler.h"
 
 GLWindow::GLWindow(const char* name, int width, int height, bool vsync) {
     SetCurrentDirToExe(); // 切换到exe所在目录
@@ -114,12 +116,12 @@ GLWindow::GLWindow(const char* name, int width, int height, bool vsync) {
                 }
                 msg << "\n";
                 msg << message;
-                std::cout << msg.str() << std::endl;
+                LOG_WARN("{}", msg.str());
             }, nullptr);
         glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
     }
     else {
-        std::cerr << "Failed to create OpenGL Debug Context" << std::endl;
+        LOG_ERROR("Failed to create OpenGL Debug Context");
     }
 #endif
 
@@ -182,6 +184,7 @@ GLWindow::~GLWindow() {
 
 void GLWindow::MainLoop() {
     while (!glfwWindowShouldClose(window)) {
+        Profiler::Instance().NewFrame();
         {
             PERF_MARKER("Frame")
             HandleDisplayEvent();
@@ -241,14 +244,23 @@ void GLWindow::Error(const std::string& msg) {
     if (err_msgs_.size() >= 60)
         err_msgs_.pop_front();
     err_msgs_.push_back(msg);
-    std::cerr << msg << std::endl;
+    LOG_ERROR("{}", msg);
 }
 
-void GLWindow::ScreenShot(const char* path) {
+void GLWindow::ScreenShot(const std::string& path_no_ext, ImageFormat format) {
     auto [width, height] = GetWindowSize();
     auto pixels = std::make_unique<std::byte[]>(static_cast<size_t>(width) * height * 3);
     glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.get());
-    stbi_write_png(path, width, height, 3, pixels.get(), width * 3);
+    switch (format) {
+    case GLWindow::PNG:
+        stbi_write_png((path_no_ext + ".png").c_str(), width, height, 3, pixels.get(), width * 3);
+        break;
+    case GLWindow::JPG:
+        stbi_write_jpg((path_no_ext + ".jpg").c_str(), width, height, 3, pixels.get(), 90);
+        break;
+    default:
+        break;
+    }
 }
 
 void GLWindow::CheckError() {

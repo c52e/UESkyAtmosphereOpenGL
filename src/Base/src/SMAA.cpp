@@ -4,10 +4,10 @@
 
 #include "ScreenRectangle.h"
 #include "Samplers.h"
-#include "PerformanceMarker.h"
 
 #include "SMAA/AreaTex.h"
 #include "SMAA/SearchTex.h"
+#include "log.h"
 
 SMAA::SMAA(int width, int height, SMAAOption option)
 	: option_(option) {
@@ -33,7 +33,7 @@ SMAA::SMAA(int width, int height, SMAAOption option)
 	neighborhood_blending_ = load("../shaders/Base/SMAA/NeighborhoodBlending.glsl");
 
 	auto create_tex = [](const unsigned char data[], int width, int height, int element_bytes) {
-		assert(element_bytes == 1 || element_bytes == 2);
+		ASSERT(element_bytes == 1 || element_bytes == 2);
 
 		GLTexture res;
 		res.Create(GL_TEXTURE_2D);
@@ -58,7 +58,7 @@ SMAA::SMAA(int width, int height, SMAAOption option)
 	stencil_tex_.Create(GL_TEXTURE_2D);
 	glTextureStorage2D(edges_tex_.id(), 1, GL_RGBA8, width, height);
 	glTextureStorage2D(blend_tex_.id(), 1, GL_RGBA8, width, height);
-	glTextureStorage2D(output_tex_.id(), 1, GL_RGBA8, width, height);
+	glTextureStorage2D(output_tex_.id(), 1, GL_SRGB8_ALPHA8, width, height);
 	glTextureStorage2D(stencil_tex_.id(), 1, GL_STENCIL_INDEX8, width, height);
 
 	glNamedFramebufferTexture(framebuffer_.id(), GL_COLOR_ATTACHMENT0, edges_tex_.id(), 0);

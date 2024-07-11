@@ -6,15 +6,18 @@
 layout(std140, binding = 1) uniform VolumetricCloudCommonBufferData{
 	mat4 uInvMVP;
 	mat4 uReprojectMat;
+	mat4 uReprojectMatNoProjection;
 
 	mat4 uLightVP;
 	mat4 uInvLightVP;
 	mat4 uShadowMapReprojectMat;
+	mat4 uScreenToShadowMap;
 
 	vec3 uCameraPos;
 	uint uBaseShadingIndex;
 
-	vec2 uLinearDepthParam; // x = 1 / zNear; y = (zFar - zNear) / (zFar * zNear)
+	float uZNear;
+	float uLightFroxelMaxDist;
 	float uBottomAltitude;
 	float uTopAltitude;
 
@@ -25,17 +28,18 @@ layout(std140, binding = 1) uniform VolumetricCloudCommonBufferData{
 	float uAerialPerspectiveLutMaxDistance;
 	float uShadowFroxelMaxDistance;
 	float uEarthRadius;
+
 };
 
 const float kMinTransmittance = 0.01;
 
 float DepthToLinearDepth(float depth) {
-	return 1.0 / (uLinearDepthParam.x - uLinearDepthParam.y * depth);
+	return min(uZNear / depth, 1e9);
 }
 
 float CalHeight01(vec3 pos) {
 	float altitude = length(vec3(pos.xy, pos.z + uEarthRadius)) - uEarthRadius;
-	return clamp((altitude - uBottomAltitude) / (uTopAltitude - uBottomAltitude), 0, 1);
+	return (altitude - uBottomAltitude) / (uTopAltitude - uBottomAltitude);
 }
 
 // Same order as textureGather
@@ -53,13 +57,6 @@ ivec2 IndexToOffset(uint index) {
 
 vec4 texelFetchClamp(sampler2D s, ivec2 p, int lod) {
 	return texelFetch(s, clamp(p, ivec2(0), textureSize(s, lod) - 1), lod);
-}
-
-float HenyeyGreenstein(float cos_theta, float g) {
-	float a = 1.0 - g * g;
-	float b = 1.0 + g * g - 2.0 * g * cos_theta;
-	b *= sqrt(b);
-	return (0.25 * INV_PI) * a / b;
 }
 
 float HenyeyGreensteinInvertcdf(float xi, float g) {
@@ -95,6 +92,50 @@ vec3 GetAerialPerspective(sampler3D aerial_perspective_luminance_texture,
 	transmittance = texture(aerial_perspective_transmittance_texture, uvw).rgb;
 	vec3 luminance = texture(aerial_perspective_luminance_texture, uvw).rgb;
 	return luminance;
+}
+
+#define CLOUD_SAMPLE_MAIN_RAY 0
+#define CLOUD_SAMPLE_SHADOW_RAY 1
+#define CLOUD_SAMPLE_SHADOW_MAP 2
+#define CLOUD_SAMPLE_PATH_TRACING 3
+
+struct CloudSampleParams {
+	vec3 pos;
+	float height01;
+	vec3 camera_pos;
+	int caller_type;
+};
+
+struct CloudSampleResult {
+	float sigma_t;
+	float phase_g;
+
+	// Oz: The Great and Volumetric - Magnus Wrenninge
+	float attenuation;
+	float contribution;
+};
+
+CloudSampleResult DefaultCloudSampleResult() {
+	CloudSampleResult res;
+	res.sigma_t = 0;
+	res.phase_g = 0.85;
+	res.attenuation = 0.5;
+	res.contribution = 0.5;
+	return res;
+}
+
+// Should be defined in material shader (if used)
+void SampleCloud(CloudSampleParams params, inout CloudSampleResult res);
+
+void SampleCloudWithCheck(CloudSampleParams params, inout CloudSampleResult res) {
+#if 1
+	SampleCloud(params, res);
+	res.sigma_t = clamp(params.height01, 0, 1) == params.height01 ? res.sigma_t : 0;
+#else
+	if (clamp(height01, 0, 1) != height01)
+		return;
+	SampleCloud(params, res);
+#endif
 }
 
 #endif

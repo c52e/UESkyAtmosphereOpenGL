@@ -1,6 +1,5 @@
+#version 460
 #include "VolumetricCloudCommon.glsl"
-
-layout(local_size_x = LOCAL_SIZE_X, local_size_y = LOCAL_SIZE_Y) in;
 
 layout(binding = 0) uniform sampler2D checkerboard_depth;
 

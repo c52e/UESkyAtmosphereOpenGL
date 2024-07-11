@@ -8,6 +8,7 @@
         "raymarching_dither_sample_point_enable": true,
         "sky_view_lut_dither_sample_point_enable": false,
         "use_aerial_perspective_lut": true,
+        "use_scattering_lut": false,
         "use_sky_view_lut": true,
         "volumetric_light_enable": false
     },
@@ -21,7 +22,6 @@
         "sun_direction_theta": 33.97100067138672
     },
     "camera_": {
-        "aspect_": 1.7777777910232544,
         "fovy": 45.0,
         "front_": [
             -0.23097121715545654,
@@ -45,7 +45,6 @@
             -0.06878595799207687
         ],
         "yaw_": -22216.611328125,
-        "zFar": 50000.0,
         "zNear": 0.30000001192092896
     },
     "camera_speed_": 29.0,
@@ -53,6 +52,9 @@
     "draw_gui_enable_": true,
     "draw_help_enable_": true,
     "earth_": {
+        "always_update_atmosphere": false,
+        "enable_raymarched_terrain": false,
+        "enable_terrain_shadow": true,
         "moon_status": {
             "direction_phi": 150.0,
             "direction_theta": 70.0,
@@ -82,6 +84,7 @@
             "mie_scattering_scale": 0.003996000159531832,
             "multiscattering_mask": 1.0,
             "multiscattering_steps": 30.0,
+            "num_scattering_orders": 0,
             "ozone_absorption": [
                 0.3455609977245331,
                 1.0,
@@ -105,9 +108,34 @@
             "sun_angular_radius": 0.26669999957084656,
             "thickness": 60.0,
             "transmittance_steps": 40.0
+        },
+        "terrain": {
+            "altitude_fineness": 0.6048499941825867,
+            "dirt_albedo": [
+                0.15000000596046448,
+                0.15000000596046448,
+                0.10000000149011612
+            ],
+            "grass_albedo": [
+                0.05000000074505806,
+                0.15000000596046448,
+                0.029999999329447746
+            ],
+            "marching_fineness": 0.4559600055217743,
+            "max_altitude": 3.0,
+            "max_visible_distance": 500.0,
+            "normal_delta_tangent": 0.0010000000474974513,
+            "normal_fineness": 0.7048500180244446,
+            "physical_lod": 4.0,
+            "slope": 0.38999998569488525,
+            "snow_albedo": [
+                0.6200000047683716,
+                0.6499999761581421,
+                0.699999988079071
+            ]
         }
     },
-    "full_screen_": true,
+    "full_screen_": false,
     "post_process_parameters_": {
         "bloom_filter_width": 0.029999999329447746,
         "bloom_intensity": 0.10000000149011612,
@@ -120,7 +148,7 @@
     "smaa_option_": "SMAA_PRESET_HIGH",
     "volumetric_cloud_": {
         "bottom_altitude_": 1.6759999990463257,
-        "env_bottom_visibility": 0.3919999897480011,
+        "env_bottom_visibility": 0.4000000059604645,
         "env_color_": [
             0.6372548937797546,
             0.7652825117111206,
@@ -128,7 +156,7 @@
         ],
         "env_color_scale_": 0.2750000059604645,
         "env_multiscattering_sigma_scale": 0.5,
-        "env_sun_height_curve_exp": 0.8130000233650208,
+        "env_sun_height_curve_exp": 1.0,
         "material": {
             "type": "class VolumetricCloudDefaultMaterial1",
             "data": {
@@ -140,32 +168,42 @@
                 "edge_cut_": 0.7170000076293945,
                 "height_cut_": 0.8009999990463257,
                 "materail_common_": {
-                    "cloud_map_.buffer.uDensity.base_frequency": 8,
-                    "cloud_map_.buffer.uDensity.remap_max": 0.8360000252723694,
-                    "cloud_map_.buffer.uDensity.remap_min": 0.20200000703334808,
-                    "cloud_map_.buffer.uDensity.seed": 0,
-                    "cloud_map_.buffer.uHeight.base_frequency": 7,
-                    "cloud_map_.buffer.uHeight.remap_max": 0.40700000524520874,
-                    "cloud_map_.buffer.uHeight.remap_min": 0.8519999980926514,
-                    "cloud_map_.buffer.uHeight.seed": 0,
+                    "cloud_map_.buffer.uDensity": {
+                        "base_frequency": 8,
+                        "remap_max": 0.8360000252723694,
+                        "remap_min": 0.20200000703334808,
+                        "seed": 0
+                    },
+                    "cloud_map_.buffer.uHeight": {
+                        "base_frequency": 7,
+                        "remap_max": 0.40700000524520874,
+                        "remap_min": 0.8519999980926514,
+                        "seed": 0
+                    },
                     "cloud_map_.texture.repeat_size": 94.34500122070313,
                     "density_": 25.0,
-                    "detail_.buffer.uPerlin.base_frequency": 7,
-                    "detail_.buffer.uPerlin.remap_max": 1.0,
-                    "detail_.buffer.uPerlin.remap_min": 1.0,
-                    "detail_.buffer.uPerlin.seed": 0,
-                    "detail_.buffer.uWorley.base_frequency": 5,
-                    "detail_.buffer.uWorley.remap_max": 0.8009999990463257,
-                    "detail_.buffer.uWorley.remap_min": 0.12399999797344208,
-                    "detail_.buffer.uWorley.seed": 0,
+                    "detail_.buffer.uPerlin": {
+                        "base_frequency": 7,
+                        "remap_max": 1.0,
+                        "remap_min": 1.0,
+                        "seed": 0
+                    },
+                    "detail_.buffer.uWorley": {
+                        "base_frequency": 5,
+                        "remap_max": 0.8009999990463257,
+                        "remap_min": 0.12399999797344208,
+                        "seed": 0
+                    },
                     "detail_.texture.repeat_size": 5.97599983215332,
                     "detail_wind_magnify_": 1.0,
-                    "displacement_.buffer.uPerlin.base_frequency": 6,
-                    "displacement_.buffer.uPerlin.remap_max": 0.1589999943971634,
-                    "displacement_.buffer.uPerlin.remap_min": 0.8009999990463257,
-                    "displacement_.buffer.uPerlin.seed": 0,
+                    "displacement_.buffer.uPerlin": {
+                        "base_frequency": 6,
+                        "remap_max": 0.1589999943971634,
+                        "remap_min": 0.8009999990463257,
+                        "seed": 0
+                    },
                     "displacement_.texture.repeat_size": 4.138999938964844,
-                    "lod_bias_": 2.4230000972747803,
+                    "lod_bias_": 0.4230000972747803,
                     "minfilter2d_": "NEAREST_MIPMAP_NEAREST",
                     "minfilter3d_": "NEAREST_MIPMAP_NEAREST",
                     "minfilter_displacement_": "NEAREST_MIPMAP_NEAREST",
@@ -179,10 +217,10 @@
         "shadow_distance_": 2.0,
         "shadow_froxel_max_distance": 30.63599967956543,
         "shadow_map_max_distance": 48.26599884033203,
-        "shadow_steps_": 5.0,
+        "shadow_steps_": 5,
         "sun_illuminance_scale_": 1.0,
-        "sun_multiscattering_sigma_scale": 0.30000001192092896,
         "thickness_": 3.3959999084472656
     },
+    "volumetric_cloud_full_resolution_": false,
     "vsync_enable_": false
 }

@@ -8,7 +8,6 @@
 #include "Textures.h"
 #include "Samplers.h"
 #include "ScreenRectangle.h"
-#include "PerformanceMarker.h"
 
 HDRBuffer::HDRBuffer(int width, int height) {
 	framebuffer_.Create();
@@ -17,7 +16,7 @@ HDRBuffer::HDRBuffer(int width, int height) {
 
 	for (int i = 0; i < hdr_textures_.size(); ++i)
 		glTextureStorage2D(hdr_textures_[i], 1, GL_RGBA16F, width, height);
-	glTextureStorage2D(sdr_texture_.id(), 1, GL_RGBA8, width, height);
+	glTextureStorage2D(sdr_texture_.id(), 1, GL_SRGB8_ALPHA8, width, height);
 
 	glNamedFramebufferTexture(framebuffer_.id(), GL_COLOR_ATTACHMENT0, hdr_textures_[0], 0);
 	GLenum attachments[]{ GL_COLOR_ATTACHMENT0 };

@@ -35,6 +35,11 @@ Textures::Textures() {
     {
         auto data = stbi_load_unique("../data/NASA/moon_normal_2k.jpg", &x, &y, &n, 0);
 
+        // The moon normal is stored with DirectX normal direction
+        // Change to glTF (OpenGL) normal direction
+        for (int i = 0; i < x * y; ++i)
+            data.get()[i * 3 + 1] = 255 - data.get()[i * 3 + 1];
+
         moon_normal_.Create(GL_TEXTURE_2D);
         glTextureStorage2D(moon_normal_.id(), GetMipmapLevels(x, y), GL_RGB8, x, y);
         glTextureSubImage2D(moon_normal_.id(), 0, 0, 0, x, y, GL_RGB, GL_UNSIGNED_BYTE, data.get());
@@ -64,8 +69,7 @@ Textures::Textures() {
         glTextureStorage2D(env_brdf_lut_.id(), 1, GL_RG16, kSizeX, kSizeY);
         GLReloadableComputeProgram program = {
             "../shaders/Base/EnvBRDFLut.comp",
-            {{8, 8}},
-            [](const std::string& src) { return std::string("#version 460\n") + src; }
+            {{8, 8}}
         };
         glUseProgram(program.id());
         GLBindImageTextures({ env_brdf_lut_.id() });

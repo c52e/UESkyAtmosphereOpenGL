@@ -1,0 +1,98 @@
+#version 460
+
+#define MULTISCATTERING_COMPUTE_PROGRAM
+#include "Atmosphere.glsl"
+
+vec3 GetDirectionFromLocalIndex(int index) {
+    float unit_theta = (0.5 + float(index / 8)) / 8.0;
+    float unit_phi = (0.5 + float(index % 8)) / 8.0;
+    // Uniformly sample on a sphere
+    float cos_theta = 1.0 - 2.0 * unit_theta;
+    float sin_theta = sqrt(clamp(1.0 - cos_theta * cos_theta, 0, 1));
+
+    float phi = 2 * PI * unit_phi;
+    float cos_phi = cos(phi);
+    float sin_phi = sin(phi);
+    return vec3(cos_phi * sin_theta, cos_theta, sin_phi * sin_theta);
+}
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 64) in;
+layout(binding = 0) uniform sampler2D transmittance_texture;
+layout(binding = 0, SCATTERING_FORMAT) uniform image2D multiscattering_image;
+
+shared vec3 L_2nd_order_shared[64];
+shared vec3 f_ms_shared[64];
+
+void main() {
+    float altitude, mu_s;
+    GetAltitudeMuSFromMultiscatteringTextureIndex(ivec2(gl_GlobalInvocationID.xy), 
+        imageSize(multiscattering_image), altitude, mu_s);
+    vec3 earth_center = vec3(0, -bottom_radius, 0);
+    vec3 start_position = vec3(0, altitude, 0);
+    vec3 sun_direction = vec3(0, mu_s, sqrt(1 - mu_s * mu_s));
+    int local_index = int(gl_GlobalInvocationID.z);
+    vec3 view_direction = GetDirectionFromLocalIndex(local_index);
+    
+    float r = altitude + bottom_radius;
+    float mu = view_direction.y;
+    bool intersect_bottom = RayIntersectsGround(r, mu);
+    float marching_distance = DistanceToNearestAtmosphereBoundary(r, mu, intersect_bottom);
+
+    vec3 transmittance;
+    vec3 L_f;
+    vec3 luminance = ComputeScatteredLuminance(transmittance_texture, earth_center, start_position,
+        view_direction, sun_direction, marching_distance, multiscattering_steps, transmittance, L_f);
+
+    if (intersect_bottom) {
+        vec3 ground_position = start_position + view_direction * marching_distance;
+        luminance += transmittance * ComputeGroundLuminance(
+            transmittance_texture, earth_center, ground_position, sun_direction);
+    }
+    
+    L_2nd_order_shared[local_index] = luminance;
+    f_ms_shared[local_index] = L_f;
+
+    barrier();
+    if (local_index < 32) {
+        L_2nd_order_shared[local_index] += L_2nd_order_shared[local_index + 32];
+        f_ms_shared[local_index] += f_ms_shared[local_index + 32];
+    }
+    barrier();
+    if (local_index < 16) {
+        L_2nd_order_shared[local_index] += L_2nd_order_shared[local_index + 16];
+        f_ms_shared[local_index] += f_ms_shared[local_index + 16];
+    }
+    barrier();
+    if (local_index < 8) {
+        L_2nd_order_shared[local_index] += L_2nd_order_shared[local_index + 8];
+        f_ms_shared[local_index] += f_ms_shared[local_index + 8];
+    }
+    barrier();
+    if (local_index < 4) {
+        L_2nd_order_shared[local_index] += L_2nd_order_shared[local_index + 4];
+        f_ms_shared[local_index] += f_ms_shared[local_index + 4];
+    }
+    barrier();
+    if (local_index < 2) {
+        L_2nd_order_shared[local_index] += L_2nd_order_shared[local_index + 2];
+        f_ms_shared[local_index] += f_ms_shared[local_index + 2];
+    }
+    barrier();
+    if (local_index < 1) {
+        L_2nd_order_shared[local_index] += L_2nd_order_shared[local_index + 1];
+        f_ms_shared[local_index] += f_ms_shared[local_index + 1];
+    }
+    barrier();
+    if (local_index > 0)
+        return;
+
+    // 因为都是各向同性散射，直接取平均即可
+    vec3 L_2nd_order = L_2nd_order_shared[0] / 64;
+    vec3 f_ms = f_ms_shared[0] / 64;
+
+    vec3 F_ms = 1 / (1 - f_ms);
+    vec3 multiscattering_contribution = L_2nd_order * F_ms;
+
+    imageStore(multiscattering_image, ivec2(gl_GlobalInvocationID.xy),
+        vec4(multiscattering_contribution, 1.0));
+}

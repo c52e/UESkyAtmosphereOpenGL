@@ -24,7 +24,8 @@ namespace ImGui {
             auto i = enums.begin();
             auto j = names.begin();
             while (i < enums.end())
-                *i++ = *j++;
+                //*i++ = *j++; // doesn't work in msvc c++20 lastest
+                *i++ = std::string(*j++);
         }
         char buf[MaxEnumStringViewSize<Enum>() + 1];
         auto curstrview = magic_enum::enum_name(*penum);

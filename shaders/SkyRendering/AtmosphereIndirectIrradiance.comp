@@ -1,0 +1,70 @@
+/*
+This code contains portions of source code from 
+https://github.com/ebruneton/precomputed_atmospheric_scattering/blob/master/atmosphere/functions.glsl
+Copyright (c) 2017 Eric Bruneton
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+3. Neither the name of the copyright holders nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+*/
+
+#version 460
+#include "Atmosphere.glsl"
+
+//layout(binding = 0) uniform sampler2D transmittance_texture;
+layout(binding = 1) uniform sampler3D single_rayleigh_scattering_texture;
+layout(binding = 2) uniform sampler3D single_mie_scattering_texture;
+layout(binding = 3) uniform sampler3D multiple_scattering_texture;
+//layout(binding = 4) uniform sampler2D irradiance_texture;
+
+layout(binding = 0, IRRADIANCE_FORMAT) uniform image2D delta_irradiance_image;
+
+layout(location = 0) uniform int scattering_order;
+
+vec3 ComputeIndirectIrradiance(float r, float mu_s) {
+    const int SAMPLE_COUNT = 32;
+    const float dphi = PI / float(SAMPLE_COUNT);
+    const float dtheta = PI / float(SAMPLE_COUNT);
+
+    vec3 result = vec3(0.0);
+    vec3 omega_s = vec3(sqrt(1.0 - mu_s * mu_s), 0.0, mu_s);
+    for (int j = 0; j < SAMPLE_COUNT / 2; ++j) {
+        float theta = (float(j) + 0.5) * dtheta;
+        for (int i = 0; i < 2 * SAMPLE_COUNT; ++i) {
+            float phi = (float(i) + 0.5) * dphi;
+            vec3 omega =
+                vec3(cos(phi) * sin(theta), sin(phi) * sin(theta), cos(theta));
+            float domega = dtheta * dphi * sin(theta);
+
+            float nu = dot(omega, omega_s);
+            result += GetScattering(single_rayleigh_scattering_texture,
+                single_mie_scattering_texture, multiple_scattering_texture,
+                r, omega.z, mu_s, nu, false /* ray_r_theta_intersects_ground */,
+                scattering_order) *
+                    omega.z * domega;
+        }
+    }
+    return result;
+}
+
+vec3 ComputeIndirectIrradianceTexture(vec2 frag_coord) {
+    float r;
+    float mu_s;
+    GetRMuSFromIrradianceTextureUv(frag_coord, imageSize(delta_irradiance_image), r, mu_s);
+    return ComputeIndirectIrradiance(r, mu_s);
+}
+
+void main() {
+	vec2 frag_coord = vec2(gl_GlobalInvocationID.xy) + 0.5;
+    vec3 delta_irradiance = ComputeIndirectIrradianceTexture(frag_coord);
+    imageStore(delta_irradiance_image, ivec2(gl_GlobalInvocationID.xy), vec4(delta_irradiance, 1.0));
+}

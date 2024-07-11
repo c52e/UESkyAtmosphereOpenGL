@@ -15,10 +15,11 @@ layout(binding = 1, r8ui) uniform uimage2D rendered_mask_image;
 layout(binding = 2, rgba16f) uniform image2D display_image;
 
 layout(location = 0) uniform uint kFrameId;
+layout(location = 1) uniform ivec4 kRenderRegion;
 
-const vec2 kCloudAABBCenter = vec2(0.0);
-const vec3 kCloudAABBMin = vec3(kCloudAABBCenter - vec2(kCloudHalfWidth), uBottomAltitude);
-const vec3 kCloudAABBMax = vec3(kCloudAABBCenter + vec2(kCloudHalfWidth), uTopAltitude);
+vec2 gUv = vec2(0.0);
+
+const vec2 kCloudCenter = vec2(0.0);
 
 // https://github.com/sebh/UnrealEngineSkyAtmosphere
 // https://graphics.pixar.com/library/ProductionVolumeRendering/
@@ -54,6 +55,10 @@ vec3 UniformSphereSample(inout Context ctx) {
     return vec3(cos(phi) * sin_theta, sin(phi) * sin_theta  , cos_theta);
 }
 
+#ifdef REGION_SHAPE_BOX
+const vec3 kCloudAABBMin = vec3(kCloudCenter - vec2(kCloudRegionRadius), uBottomAltitude);
+const vec3 kCloudAABBMax = vec3(kCloudCenter + vec2(kCloudRegionRadius), uTopAltitude);
+
 vec2 CloudRegionIntersect(Ray ray) {
     vec2 t = vec2(0, 1e7);
     for (int i = 0; i < 3; ++i) {
@@ -74,20 +79,83 @@ vec2 CloudRegionIntersect(Ray ray) {
     return t;
 }
 
-bool IsInsideCloudRegion(vec3 p) {
-    const float kMargin = 0.01; // More robust
-    return all(clamp(p, kCloudAABBMin - kMargin, kCloudAABBMax + kMargin) == p);
+//bool IsInsideCloudRegion(vec3 p) {
+//    const float kMargin = 0.01; // More robust
+//    return all(clamp(p, kCloudAABBMin - kMargin, kCloudAABBMax + kMargin) == p);
+//}
+
+float GetHeight(vec3 P) {
+    return clamp((P.z - uBottomAltitude) / (uTopAltitude - uBottomAltitude), 0, 1);
 }
+#endif
+
+#ifdef REGION_SHAPE_SPHERE
+vec2 CloudRegionIntersect(Ray ray) {
+    float r = length(ray.o + vec3(0, 0, uEarthRadius));
+    float mu = dot(ray.d, normalize(ray.o + vec3(0, 0, uEarthRadius)));
+    vec2 t = vec2(0.0);
+
+    float bottom_radius = uEarthRadius + uBottomAltitude;
+    float top_radius = uEarthRadius + uTopAltitude;
+    float discriminant_bottom = r * r * (mu * mu - 1.0) + bottom_radius * bottom_radius;
+    float discriminant_top = r * r * (mu * mu - 1.0) + top_radius * top_radius;
+    float sqrt_discriminant_bottom = sqrt(discriminant_bottom);
+    float sqrt_discriminant_top = sqrt(discriminant_top);
+    if (r < bottom_radius) {
+        t.x = -r * mu + sqrt_discriminant_bottom;
+        t.y = -r * mu + sqrt_discriminant_top;
+    } else if (r < top_radius) {
+        t.y = -r * mu + (discriminant_bottom >= 0.0 && mu < 0.0 ? -sqrt_discriminant_bottom : sqrt_discriminant_top);
+    } else /*if (r >= top_radius)*/{
+        if (discriminant_bottom >= 0.0 && mu < 0.0) {
+            t.x = -r * mu - sqrt_discriminant_top;
+            t.y = -r * mu - sqrt_discriminant_bottom;
+        } else if (discriminant_top >= 0.0 && mu < 0.0) {
+            t.x = -r * mu - sqrt_discriminant_top;
+            t.y = -r * mu + sqrt_discriminant_top;
+        }
+    }
+    if (t.y > t.x) { // Intersect with kCloudRegionRadius sphere
+        float r_cull = length(ray.o - vec3(kCloudCenter, 0));
+        float mu_cull = dot(ray.d, normalize(ray.o - vec3(kCloudCenter, 0)));
+        vec2 t_cull = vec2(0);
+
+        float discriminant_cull = r_cull * r_cull * (mu_cull * mu_cull - 1.0) + kCloudRegionRadius * kCloudRegionRadius;
+        float sqrt_discriminant_cull = sqrt(discriminant_cull);
+        if (r_cull < kCloudRegionRadius) {
+            t_cull.y = -r_cull * mu_cull + sqrt_discriminant_cull;
+        } else {
+            if (discriminant_cull >= 0.0 && mu_cull < 0.0) {
+                t_cull.x = -r_cull * mu_cull - sqrt_discriminant_cull;
+                t_cull.y = -r_cull * mu_cull + sqrt_discriminant_cull;
+            }
+        }
+        t.x = max(t.x, t_cull.x);
+        t.y = min(t.y, t_cull.y);
+    }
+
+    return t;
+}
+
+//bool IsInsideCloudRegion(vec3 p) {
+//    float d0 = length(p + vec3(0, 0, uEarthRadius)) - uEarthRadius;
+//    float d1 = length(vec3(kCloudCenter, 0) - p);
+//    return d0 >= uBottomAltitude && d0 <= uTopAltitude && d1 < kCloudRegionRadius;
+//}
+
+float GetHeight(vec3 P) {
+    return CalHeight01(P);
+}
+#endif
 
 float InfiniteTransmittanceIS(float sigma_t, float zeta) {
     return -log(1.0 - zeta) / sigma_t;
 }
 
-// Should be defined in material shader
-float SampleSigmaT(vec3 pos, float height01);
-
-float SampleSigmaT(vec3 P) {
-    return SampleSigmaT(P, clamp((P.z - uBottomAltitude) / (uTopAltitude - uBottomAltitude), 0, 1));
+float SampleSigmaTWithCheck(vec3 P) {
+    CloudSampleResult res = DefaultCloudSampleResult();
+    SampleCloudWithCheck(CloudSampleParams(P, GetHeight(P), uCameraPos, CLOUD_SAMPLE_PATH_TRACING), res);
+    return res.sigma_t;
 }
 
 float GetPhase(float cos_theta) {
@@ -132,6 +200,8 @@ vec3 GetSunIlluminance(vec3 pos) {
     return GetSunVisibility(transmittance_texture, pos) * solar_illuminance;
 }
 
+const bool kHalfScreenWeightedTracking = false;
+
 float TransmittanceEstimation(Context ctx, Ray ray) {
     float transmittance = 1.0;
     vec2 inter_t = CloudRegionIntersect(ray);
@@ -139,15 +209,52 @@ float TransmittanceEstimation(Context ctx, Ray ray) {
         return transmittance;
     
     float t = inter_t.x;
-    while (true) {
-		t += InfiniteTransmittanceIS(ctx.sigma_t_max, Random01(ctx));
-        if (t > inter_t.y)
-            break;
 
-        float sigma_t = SampleSigmaT(ray.o + ray.d * t);
-        transmittance *= 1.0 - max(0, sigma_t / ctx.sigma_t_max); 
+if (!kHalfScreenWeightedTracking || gUv.x > 0.5) {
+#define TRACKING_BODY \
+    t += InfiniteTransmittanceIS(ctx.sigma_t_max, Random01(ctx)); \
+    if (t > inter_t.y) \
+        return clamp(transmittance, 0, 1); \
+    float sigma_t = SampleSigmaTWithCheck(ray.o + ray.d * t); \
+    float ratio = max(0, sigma_t / ctx.sigma_t_max)
+        
+    for (int i = 0; i < kMaxRatioTrackingSteps; ++i) {
+        TRACKING_BODY;
+        transmittance *= 1.0 - ratio; 
     }
-    return clamp(transmittance, 0, 1);
+
+    while (true) {
+        TRACKING_BODY;
+        if (Random01(ctx) < ratio)
+            break;
+    }
+#undef TRACKING_BODY
+} else {
+    float sigma_t_max = ctx.sigma_t_max * 1;
+    for (int i = 0; i < kMaxRatioTrackingSteps; ++i) {
+        t += InfiniteTransmittanceIS(sigma_t_max, Random01(ctx));
+        if (t > inter_t.y)
+            return transmittance;
+        float sigma_t = SampleSigmaTWithCheck(ray.o + ray.d * t);
+        float ratio = max(0, sigma_t / sigma_t_max);
+        transmittance *= 1.0 - ratio; 
+    }
+    // weighted delta tracking
+    // https://jannovak.info/publications/SDTracking/SDTracking.pdf
+    while (true) {
+        t += InfiniteTransmittanceIS(sigma_t_max, Random01(ctx));
+        if (t > inter_t.y)
+            return transmittance;
+        float sigma_t = SampleSigmaTWithCheck(ray.o + ray.d * t);
+        float sigma_n = sigma_t_max - sigma_t;
+        float p_s = sigma_t / (sigma_t + abs(sigma_n));
+        float p_n = 1.0 - p_s;
+        if (Random01(ctx) < p_s)
+            break;
+        transmittance *= sign(sigma_n) * (sigma_t + abs(sigma_n)) / sigma_t_max;
+    }
+}
+    return 0.0;
 }
 
 vec3 SampleLuminanceFromLight(inout Context ctx, vec3 pos, vec3 bsdf_with_cosine) {
@@ -157,6 +264,55 @@ vec3 SampleLuminanceFromLight(inout Context ctx, vec3 pos, vec3 bsdf_with_cosine
     return TransmittanceEstimation(ctx, CreateRay(pos, uSunDirection)) * light_luminance * bsdf_with_cosine / pdf;
 }
 
+bool ScatterTest(inout Context ctx, out float t, inout vec3 throughput) {
+    while (true) {
+        vec2 inter_t = CloudRegionIntersect(ctx.ray);
+        if (inter_t.x >= inter_t.y)
+            return false;
+        float t_max = inter_t.y;
+        t = inter_t.x;
+        while (true) {
+            t += InfiniteTransmittanceIS(ctx.sigma_t_max, Random01(ctx));
+            if (t > t_max) {
+                // Don't return false. This will handle multiple segments. 
+                ctx.ray.o += ctx.ray.d * t;
+                break;
+            }
+
+            vec3 P = ctx.ray.o + ctx.ray.d * t;
+            float sigma_t = SampleSigmaTWithCheck(P);
+
+if (!kHalfScreenWeightedTracking || gUv.x > 0.5) {
+		    float xi = Random01(ctx);
+            if (xi < sigma_t / ctx.sigma_t_max)
+                return true;
+} else {
+            // weighted delta tracking
+            // https://jannovak.info/publications/SDTracking/SDTracking.pdf
+            float sigma_t_max = ctx.sigma_t_max * 0.3;
+            float sigma_n = sigma_t_max - sigma_t;
+            float p_s = sigma_t / (sigma_t + abs(sigma_n));
+            float p_n = 1.0 - p_s;
+            if (Random01(ctx) < p_s) {
+                throughput *= (sigma_t + abs(sigma_n)) / sigma_t_max;
+                return true;
+            }   
+            throughput *= sign(sigma_n) * (sigma_t + abs(sigma_n)) / sigma_t_max;       
+}
+        }
+    }
+    return false;
+}
+
+// https://computergraphics.stackexchange.com/questions/2316/is-russian-roulette-really-the-answer
+bool RussianRoulette(inout Context ctx, inout vec3 throughput) {
+    float p = clamp(max(throughput.r, max(throughput.g, throughput.b)), 0, 1);
+    if (Random01(ctx) > p)
+        return false;
+    throughput /= p;
+    return true;
+}
+
 vec4 Trace(inout Context ctx, vec3 view_dir, out bool has_scattered, out float scattered_t) {
     // Should tracing atmosphere for better result
     vec3 L = vec3(0.0);
@@ -164,38 +320,17 @@ vec4 Trace(inout Context ctx, vec3 view_dir, out bool has_scattered, out float s
     has_scattered = false;
     ctx.ray = CreateRay(uCameraPos, view_dir);
     vec2 camera_inter_t = CloudRegionIntersect(ctx.ray);
+    //return vec4(vec3(clamp(1 - exp(-(camera_inter_t.y - camera_inter_t.x) / 50), 0, 1)), 0.0);
     if (camera_inter_t.x >= camera_inter_t.y)
         return vec4(L, throughput);
 
     ctx.ray.o += camera_inter_t.x * ctx.ray.d;
     int istep = 0;
-    while (istep < kMaxBounces && max(throughput.r, max(throughput.g, throughput.b)) > 0.0) {
+    while (istep < kMaxBounces && RussianRoulette(ctx, throughput)) {
 //        if (!IsInsideCloudRegion(ctx.ray.o))
 //            break;
-        
-        vec2 inter_t = CloudRegionIntersect(ctx.ray);
-        if (inter_t.x >= inter_t.y)
-            break;
-        float t_max = inter_t.y;
-        float t = inter_t.x;
-        bool event_scatter = false;
-        while (true) {
-            if (ctx.sigma_t_max <= 0) break;
-
-            t += InfiniteTransmittanceIS(ctx.sigma_t_max, Random01(ctx));
-            if (t > t_max) break;
-
-            vec3 P = ctx.ray.o + ctx.ray.d * t;
-            float sigma_t = SampleSigmaT(P);
-            
-		    float xi = Random01(ctx);
-            if (xi < sigma_t / ctx.sigma_t_max) {
-                event_scatter = true;
-                break;
-            }
-        }
-        
-        if (!event_scatter) {
+        float t;
+        if (!ScatterTest(ctx, t, throughput)) {
 #ifdef ENVIRONMENT_LIGHT_OFF
             break;
 #endif
@@ -250,7 +385,6 @@ vec4 Trace(inout Context ctx, vec3 view_dir, out bool has_scattered, out float s
 
 #ifndef DISPLAY_PASS
 
-layout(location = 1) uniform ivec4 kRenderRegion;
 
 void main() {
     ivec2 pos = ivec2(gl_GlobalInvocationID.xy) + kRenderRegion.xy;
@@ -261,8 +395,8 @@ void main() {
     ctx.sigma_t_max = kSigmaTMax;
 
     vec2 uv = (vec2(pos) + 0.5) / vec2(imageSize(display_image));
-    vec3 frag_pos = ProjectiveMul(uInvMVP, vec3(uv, 1.0) * 2.0 - 1.0);
-    vec3 view_dir = normalize(frag_pos - uCameraPos);
+    gUv = uv;
+    vec3 view_dir = UvToDir(uInvMVP, uv);
 
     bool has_scattered;
     float scattered_t;

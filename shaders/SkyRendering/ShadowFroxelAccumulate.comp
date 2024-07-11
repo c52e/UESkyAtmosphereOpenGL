@@ -1,0 +1,15 @@
+#version 460
+
+#include "Common.glsl"
+layout(binding = 0, r16) uniform image3D visibility_froxel_image;
+
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    ivec3 image_size = imageSize(visibility_froxel_image);
+    float transmittance_sum = 0.0;
+    for (uint z = 0; z < uint(image_size.z); z++) {
+        transmittance_sum += imageLoad(visibility_froxel_image, ivec3(pos, z)).r;
+        float ray_scatter_visibility = transmittance_sum / float(z + 1);
+        imageStore(visibility_froxel_image, ivec3(pos, z), vec4(ray_scatter_visibility));
+    }
+}

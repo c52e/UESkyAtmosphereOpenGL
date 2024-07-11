@@ -1,8 +1,8 @@
+#version 460
+
 #include "VolumetricCloudCommon.glsl"
 #include "Common.glsl"
 #include "VolumetricCloudShadowInterface.glsl"
-
-layout(local_size_x = LOCAL_SIZE_X, local_size_y = LOCAL_SIZE_Y) in;
 
 layout(binding = 0) uniform sampler2D cloud_shadow_map;
 layout(binding = 0, r16) uniform image3D shadow_froxel_image;
@@ -10,18 +10,14 @@ layout(binding = 0, r16) uniform image3D shadow_froxel_image;
 void main() {
     ivec3 image_size = imageSize(shadow_froxel_image);
     vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / image_size.xy;
-    vec3 frag_pos = ProjectiveMul(uInvMVP, vec3(uv * 2.0 - 1.0, 0.0));
-
     float step_size = uShadowFroxelMaxDistance / image_size.z;
-    vec3 dir = normalize(frag_pos - uCameraPos);
+    vec3 dir = UvToDir(uInvMVP, uv);
     
     float t = 0.5 * step_size;
-    float transmittance_sum = 0.0;
     for (uint z = 0; z < uint(image_size.z); z++, t += step_size) {
         vec3 pos = uCameraPos + t * dir;
-        vec3 light_ndc = ProjectiveMul(uLightVP, pos);
-        transmittance_sum += SampleCloudShadowTransmittance(cloud_shadow_map, light_ndc);
-        float ray_scatter_visibility = transmittance_sum / float(z + 1);
-        imageStore(shadow_froxel_image, ivec3(gl_GlobalInvocationID.xy, z), vec4(ray_scatter_visibility));
+        vec3 light_ndc = MulDivW(uLightVP, pos);
+        float transmittance = SampleCloudShadowTransmittance(cloud_shadow_map, light_ndc);
+        imageStore(shadow_froxel_image, ivec3(gl_GlobalInvocationID.xy, z), vec4(transmittance));
     }
 }

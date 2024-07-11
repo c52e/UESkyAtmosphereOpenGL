@@ -12,15 +12,17 @@
 #include "Textures.h"
 #include "Samplers.h"
 #include "ImGuiExt.h"
-#include "PerformanceMarker.h"
 #include "ScreenRectangle.h"
+#include "Profiler.h"
 
 AppWindow::AppWindow(const char* config_path, int width, int height)
     : GLWindow((std::string("SkyRendering (") + config_path + ")").c_str(), width, height, false) {
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
     auto aspect = static_cast<float>(width) / height;
     camera_ = Camera(glm::vec3(0.0f, 1.0f, -1.0f), 180.0f, 0.0f, aspect);
     camera_.zNear = 3e-1f;
-    camera_.zFar = 5e4f;
     HandleReshapeEvent(width, height);
     shadow_map_ = std::make_unique<ShadowMap>(2048, 2048);
 
@@ -28,6 +30,8 @@ AppWindow::AppWindow(const char* config_path, int width, int height)
 }
 
 void AppWindow::Init(const char* config_path) {
+    glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
+
     std::ifstream fin(config_path);
     if (fin) {
         using namespace rapidjson;
@@ -38,12 +42,12 @@ void AppWindow::Init(const char* config_path) {
             str << "Failed to parse \"" << config_path << "\" (" << "offset " << d.GetErrorOffset() << "): " << GetParseError_En(d.GetParseError());
             throw std::runtime_error(str.str());
         }
-        Deserialize(d);
-        std::cout << "\"" << config_path <<  "\" loaded" << std::endl;
+        Deserialize(*this, d);
+        LOG_INFO("\"{}\" loaded", config_path);
     }
     else {
         SaveConfig(config_path);
-        std::cout << "\"" << config_path << "\" not found. Default config created" << std::endl;
+        LOG_WARN("\"{}\" not found. Default config created", config_path);
     }
     strcpy_s(config_path_, config_path);
 
@@ -125,10 +129,14 @@ void AppWindow::Init(const char* config_path) {
     }
 }
 
+void AppWindow::HandleDropEvent(int count, const char** paths) {
+    gltf_models_.emplace_back(std::make_unique<GltfModel>(paths[0]));
+}
+
 bool AppWindow::SaveConfig(const char* path) {
     rapidjson::StringBuffer sb;
     rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(sb);
-    Serialize(writer);
+    Serialize(*this, writer);
     std::ofstream fout(path);
     if (!fout)
         return false;
@@ -137,18 +145,32 @@ bool AppWindow::SaveConfig(const char* path) {
 }
 
 void AppWindow::HandleDisplayEvent() {
-    earth_.Update();
+    auto [width, height] = GetWindowSize();
+    earth_.Update(camera_, { width, height }, atmosphere_renderer_->sun_direction());
+    camera_.set_position(earth_.CheckCollision(camera_.position(), camera_.zNear));
     volumetric_cloud_.Update(camera_, earth_, *atmosphere_renderer_);
     moon_->set_model(earth_.moon_model());
+
+
+    auto model = glm::identity<glm::mat4>();
+    model = glm::translate(model, glm::vec3(0, 1, -4));
+    for (auto& gltf: gltf_models_)
+        gltf->UpdateMatrices(model);
+    
     Render();
     ProcessInput();
 }
 
 void AppWindow::Render() {
+    // https://www.reddit.com/r/programming/comments/4tlr2u/john_carmack_on_inlined_code/
+    // http://number-none.com/blow/john_carmack_on_inlined_code.html
     PERF_MARKER("Render")
+
+    glEnable(GL_FRAMEBUFFER_SRGB);
     constexpr float kShadowRegionHalfWidth = 4.0f;
     constexpr float kShadowRegionNear = 0.0f;
     constexpr float kShadowRegionFar = 5e1f;
+
     auto light_view_projection_matrix = ComputeLightMatrix(5.f,
         atmosphere_render_parameters_.sun_direction_theta,
         atmosphere_render_parameters_.sun_direction_phi,
@@ -156,64 +178,67 @@ void AppWindow::Render() {
         -kShadowRegionHalfWidth, kShadowRegionHalfWidth,
         kShadowRegionNear, kShadowRegionFar);
 
-    auto sun_angular_radius = glm::radians(earth_.parameters.sun_angular_radius);
-    atmosphere_render_parameters_.pcss_size_k = sun_angular_radius * (kShadowRegionFar - kShadowRegionNear) / kShadowRegionHalfWidth;
-    atmosphere_render_parameters_.blocker_kernel_size_k = 2.0f * atmosphere_render_parameters_.pcss_size_k;
+    {
+        PERF_MARKER("RenderShadowMap");
+        glEnable(GL_DEPTH_TEST);
 
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-    RenderShadowMap(light_view_projection_matrix);
-    volumetric_cloud_.RenderShadow();
+        glCullFace(GL_FRONT);
+        glEnable(GL_CULL_FACE);
+        shadow_map_->ClearBindViewport();
+        for (const auto& mesh_object : mesh_objects_)
+            mesh_object->RenderToShadowMap(light_view_projection_matrix);
+        for (auto& gltf : gltf_models_)
+            gltf->RenderToShadowMap(light_view_projection_matrix);
+        glDisable(GL_DEPTH_TEST);
+    }
 
-    Clear(*gbuffer_);
     auto [width, height] = GetWindowSize();
     glViewport(0, 0, width, height);
-    RenderGBuffer(*gbuffer_, camera_.ViewProjection());
-    RenderViewport(*gbuffer_, camera_.ViewProjection(), camera_.position(), light_view_projection_matrix);
     {
-        volumetric_cloud_.Render(hdrbuffer_->hdr_texture(), gbuffer_->depth_stencil());
+        PERF_MARKER("RenderGBuffer");
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_GREATER);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, gbuffer_->id());
+        Clear(*gbuffer_);
+        glCullFace(GL_BACK);
+        for (const auto& mesh_object : mesh_objects_)
+            mesh_object->RenderToGBuffer(camera_.ViewProjection());
+        for (auto& gltf : gltf_models_)
+            gltf->RenderToGBuffer(camera_.ViewProjection());
+        earth_.RenderToGBuffer(gbuffer_->depth());
+        glDepthFunc(GL_LESS);
+        glDisable(GL_DEPTH_TEST);
+    }
+    {
+        volumetric_cloud_.RenderShadow(*gbuffer_);
+        auto froxel = volumetric_cloud_.GetShadowFroxel();
+        earth_.RenderShadowBuffer(*gbuffer_, { froxel.shadow_froxel, froxel.dim, froxel.max_distance});
+    }
+    hdrbuffer_->BindHdrFramebuffer();
+    {
+        PERF_MARKER("RenderViewport");
+        auto sun_angular_radius = glm::radians(earth_.parameters.sun_angular_radius);
+        atmosphere_render_parameters_.pcss_size_k = sun_angular_radius * (kShadowRegionFar - kShadowRegionNear) / kShadowRegionHalfWidth;
+        atmosphere_render_parameters_.blocker_kernel_size_k = 2.0f * atmosphere_render_parameters_.pcss_size_k;
+        atmosphere_render_parameters_.view_projection = camera_.ViewProjection();
+        atmosphere_render_parameters_.camera_position = camera_.position();
+        atmosphere_render_parameters_.light_view_projection = light_view_projection_matrix;
+        atmosphere_render_parameters_.shadow_map_texture = shadow_map_->depth_texture();
+        atmosphere_render_parameters_.gbuffer = gbuffer_.get();
+        atmosphere_render_parameters_.hdrbuffer = hdrbuffer_.get();
+
+        atmosphere_renderer_->Render(earth_, volumetric_cloud_, atmosphere_render_parameters_);
+    }
+    {
+        volumetric_cloud_.Render(hdrbuffer_->hdr_texture(), gbuffer_->depth());
     }
 
     hdrbuffer_->DoPostProcessAndBindSdrFramebuffer(post_process_parameters_);
     smaa_->DoSMAA(hdrbuffer_->sdr_texture());
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     TextureVisualizer::Instance().VisualizeTexture(smaa_->output_tex());
-}
-
-void AppWindow::RenderShadowMap(const glm::mat4& light_view_projection_matrix) {
-    PERF_MARKER("RenderShadowMap")
-    glCullFace(GL_FRONT);
-    shadow_map_->ClearBindViewport();
-    for (const auto& mesh_object : mesh_objects_)
-        mesh_object->RenderToShadowMap(light_view_projection_matrix);
-    glDisable(GL_DEPTH_TEST);
-}
-
-void AppWindow::RenderGBuffer(const GBuffer& gbuffer, const glm::mat4& vp) {
-    PERF_MARKER("RenderGBuffer")
-    Clear(gbuffer);
-    glEnable(GL_DEPTH_TEST);
-    glBindFramebuffer(GL_FRAMEBUFFER, gbuffer.id());
-    glCullFace(GL_BACK);
-    for (const auto& mesh_object : mesh_objects_)
-        mesh_object->RenderToGBuffer(vp);
-    earth_.RenderToGBuffer(camera_, gbuffer.depth_stencil());
-    glDisable(GL_DEPTH_TEST);
-}
-
-void AppWindow::RenderViewport(const GBuffer& gbuffer, const glm::mat4& vp, glm::vec3 pos, const glm::mat4& light_view_projection_matrix) {
-    PERF_MARKER("RenderViewport")
-    atmosphere_render_parameters_.view_projection = vp;
-    atmosphere_render_parameters_.camera_position = pos;
-    atmosphere_render_parameters_.light_view_projection = light_view_projection_matrix;
-    atmosphere_render_parameters_.depth_stencil_texture = gbuffer.depth_stencil();
-    atmosphere_render_parameters_.normal = gbuffer.normal();
-    atmosphere_render_parameters_.albedo = gbuffer.albedo();
-    atmosphere_render_parameters_.orm = gbuffer.orm();
-    atmosphere_render_parameters_.shadow_map_texture = shadow_map_->depth_texture();
-
-    hdrbuffer_->BindHdrFramebuffer();
-    atmosphere_renderer_->Render(earth_, volumetric_cloud_, atmosphere_render_parameters_);
+    glDisable(GL_FRAMEBUFFER_SRGB);
 }
 
 void AppWindow::ProcessInput() {
@@ -242,11 +267,6 @@ void AppWindow::ProcessInput() {
         dUp -= camera_speed_ * dt;
     auto move_vector = camera_.front() * dForward + camera_.right() * dRight + kWorldUp * dUp;
     auto new_position = camera_.position() + move_vector;
-    auto radius = earth_.parameters.bottom_radius + camera_.zNear;
-    auto center = earth_.center();
-    if (glm::length(new_position - center) < radius) {
-        new_position = glm::normalize(new_position - center) * (radius + 0.001f) + center;
-    }
     camera_.set_position(new_position);
 
     float rotate_speed = 90.0f;
@@ -309,7 +329,7 @@ void AppWindow::HandleDrawGuiEvent() {
             GLReloadableProgram::ReloadAll();
         }
         catch (std::exception& e) {
-            std::cout << e.what() << std::endl;
+            LOG_ERROR("{}", e.what());
         }
     }
     ImGui::SameLine();
@@ -374,20 +394,63 @@ void AppWindow::HandleDrawGuiEvent() {
     }
     
     ImGui::SameLine();
-    if (ImGui::Button("ScreenShot")) {
+    static ImageFormat format = ImageFormat::PNG;
+    if (ImGui::Button("ScreenShot") || need_screenshot_) {
         time_t rawtime{};
         std::time(&rawtime);
         std::tm timeinfo{};
         localtime_s(&timeinfo, &rawtime);
         char buffer[84];
-        std::strftime(buffer, std::size(buffer), "%Y-%m-%d %H-%M-%S.png", &timeinfo);
-        ScreenShot(buffer);
+        std::strftime(buffer, std::size(buffer), "%Y-%m-%d %H-%M-%S", &timeinfo);
+
+        namespace fs = std::filesystem;
+        std::string folder = "screenshots/";
+        if (!fs::exists(folder))
+            fs::create_directory(folder);
+        ScreenShot((folder + buffer).c_str(), format);
+        need_screenshot_ = false;
+    }
+    ImGui::SameLine();
+    ImGui::PushItemWidth(60);
+    ImGui::EnumSelect("Type", &format);
+    ImGui::PopItemWidth();
+
+    ImGui::SameLine();
+    static int value_index = 11;
+    static int interval = 50;
+    if (ImGui::Button("ScreenShotRayleighMie")) {
+        value_index = 0;
+    }
+    if (value_index < 11) {
+        auto r_index = value_index / 3;
+        auto m_index = value_index % 3;
+        auto o_index = 1;
+        if (value_index >= 9) {
+            r_index = 1;
+            m_index = 1;
+            o_index = value_index == 9 ? 0 : 2;
+        }
+        earth_.parameters.rayleigh_scattering_scale = std::array{ 0.0331f * 0.33f, 0.0331f, 0.0331f * 3.0f }[r_index];
+        earth_.parameters.mie_scattering_scale = std::array{ 0.003996f * 0.1f, 0.003996f, 0.003996f * 10.0f }[m_index];
+        earth_.parameters.ozone_absorption_scale = std::array{ 0.0f, 0.001881f,  0.001881f * 5.0f}[o_index];
+        if (--interval == 0) {
+            interval = 50;
+            char buffer[256];
+            if (value_index < 9) {
+                snprintf(buffer, std::size(buffer), "screenshots/R%dM%d", r_index, m_index);
+            }
+            else {
+                snprintf(buffer, std::size(buffer), "screenshots/O%d", o_index);
+            }
+            ScreenShot(buffer, ImageFormat::JPG);
+            value_index++;
+        }
     }
 
     if (ImGui::Button("Hide GUI"))
         draw_gui_enable_ = false;
     ImGui::SameLine();
-    ImGui::Text("(Press space to reshow)");
+    ImGui::Text("(Press G to reshow)");
     ImGui::SameLine();
     ImGui::Checkbox("Show Debug Textures", &draw_debug_textures_enable_);
     ImGui::SameLine();
@@ -398,6 +461,7 @@ void AppWindow::HandleDrawGuiEvent() {
     bool previous_vsync_enable = vsync_enable_;
     auto previous_atmosphere_render_init_parameters = atmosphere_render_init_parameters_;
     auto previous_smaa_option = smaa_option_;
+    auto previous_volumetric_cloud_full_resolution = volumetric_cloud_full_resolution_;
 
     ImGui::Checkbox("Full Screen", &full_screen_);
     ImGui::SameLine();
@@ -433,12 +497,13 @@ void AppWindow::HandleDrawGuiEvent() {
 
         ImGui::Checkbox("Raymarching Dither Sample Point Enable", &atmosphere_render_init_parameters_.raymarching_dither_sample_point_enable);
         SliderFloat("Raymarching Steps", &atmosphere_render_parameters_.raymarching_steps, 0, 100.0);
+        ImGui::Checkbox("Use Scattering LUT", &atmosphere_render_init_parameters_.use_scattering_lut);
+        ImGui::SliderInt("Scattering Order", &earth_.parameters.num_scattering_orders, 0, 10);
         ImGui::TreePop();
     }
 
     if (ImGui::TreeNode("Camera")) {
-        SliderFloatLogarithmic("zNear", &camera_.zNear, 1e-1f, 1e2f, "%.1f");
-        SliderFloatLogarithmic("zFear", &camera_.zFar, 1e2f, 1e6f, "%.1f");
+        SliderFloatLogarithmic("zNear", &camera_.zNear, 1e-3f, 1e1f, "%.3f");
         SliderFloatLogarithmic("fovy", &camera_.fovy, 0.0f, 180.0, "%.1f");
         SliderFloatLogarithmic("Move Speed", &camera_speed_, 0.f, 1e5f, "%.1f");
         ImGui::TreePop();
@@ -462,6 +527,7 @@ void AppWindow::HandleDrawGuiEvent() {
     }
 
     if (ImGui::TreeNode("Earth")) {
+        ImGui::Checkbox("Always Update Atmosphere", &earth_.always_update_atmosphere);
         ColorEdit("Ground Albedo", earth_.parameters.ground_albedo);
         SliderFloatLogarithmic("Bottom Radius", &earth_.parameters.bottom_radius, 0, 6360.0, "%.1f");
         SliderFloatLogarithmic("Thickness", &earth_.parameters.thickness, 0, 1000.0, "%.1f");
@@ -488,6 +554,10 @@ void AppWindow::HandleDrawGuiEvent() {
 
         ImGui::TreePop();
     }
+    if (ImGui::TreeNode("Terrain")) {
+        earth_.DrawTerrainGui();
+        ImGui::TreePop();
+    }
 
     if (ImGui::TreeNode("Post Process")) {
         ImGui::EnumSelect("Tone Mapping", &post_process_parameters_.tone_mapping);
@@ -501,6 +571,7 @@ void AppWindow::HandleDrawGuiEvent() {
     }
 
     if (ImGui::TreeNode("VolumetricCloud")) {
+        ImGui::Checkbox("Full Resolution", &volumetric_cloud_full_resolution_);
         volumetric_cloud_.DrawGUI();
         ImGui::TreePop();
     }
@@ -508,15 +579,22 @@ void AppWindow::HandleDrawGuiEvent() {
     ImGui::End();
 
     if (draw_debug_textures_enable_) {
+        auto show_image = [](GLuint tex, const char* name) {
+            if (ImGui::TreeNode(name)) {
+                ImGui::Image((void*)(intptr_t)tex, ImVec2(512, 512), ImVec2(0, 1), ImVec2(1, 0));
+                ImGui::TreePop();
+            }
+        };
         ImGui::Begin("Textures");
-        ImGui::Image((void*)(intptr_t)earth_.atmosphere().transmittance_texture(), ImVec2(512, 512));
-        ImGui::Image((void*)(intptr_t)earth_.atmosphere().multiscattering_texture(), ImVec2(512, 512));
-        ImGui::Image((void*)(intptr_t)gbuffer_->albedo(), ImVec2(512, 512), ImVec2(0, 1), ImVec2(1, 0));
-        ImGui::Image((void*)(intptr_t)gbuffer_->normal(), ImVec2(512, 512), ImVec2(0, 1), ImVec2(1, 0));
-        ImGui::Image((void*)(intptr_t)gbuffer_->orm(), ImVec2(512, 512), ImVec2(0, 1), ImVec2(1, 0));
-        ImGui::Image((void*)(intptr_t)gbuffer_->depth_stencil(), ImVec2(512, 512), ImVec2(0, 1), ImVec2(1, 0));
-        ImGui::Image((void*)(intptr_t)shadow_map_->depth_texture(), ImVec2(512, 512), ImVec2(0, 1), ImVec2(1, 0));
-        ImGui::Image((void*)(intptr_t)Textures::Instance().env_brdf_lut(), ImVec2(512, 512), ImVec2(0, 1), ImVec2(1, 0));
+        show_image(earth_.atmosphere().transmittance_texture(), "Transmittance LUT");
+        show_image(earth_.atmosphere().multiscattering_texture(), "Multiscattering LUT");
+        show_image(gbuffer_->albedo(), "Albedo");
+        show_image(gbuffer_->normal(), "Normal");
+        show_image(gbuffer_->orm(), "ORM");
+        show_image(gbuffer_->depth(), "Depth");
+        show_image(shadow_map_->depth_texture(), "Shadow Map Depth");
+        show_image(Textures::Instance().env_brdf_lut(), "Env BRDF LUT");
+        show_image(gbuffer_->pixel_visibility(), "Pixel Visibility");
         ImGui::End();
     }
 
@@ -538,6 +616,10 @@ void AppWindow::HandleDrawGuiEvent() {
         ImGui::End();
     }
 
+    ImGui::Begin("Profile");
+    Profiler::Instance().DrawImGui();
+    ImGui::End();
+
     if (full_screen_ != previous_full_screen)
         SetFullScreen(full_screen_);
 
@@ -550,15 +632,17 @@ void AppWindow::HandleDrawGuiEvent() {
     if (atmosphere_render_init_parameters_ != previous_atmosphere_render_init_parameters)
         atmosphere_renderer_ = std::make_unique<AtmosphereRenderer>(atmosphere_render_init_parameters_);
 
-    if (smaa_option_ != previous_smaa_option) {
-        auto [width, height] = GetWindowSize();
+    auto [width, height] = GetWindowSize();
+    if (smaa_option_ != previous_smaa_option)
         smaa_ = std::make_unique<SMAA>(width, height, smaa_option_);
-    }
+
+    if (volumetric_cloud_full_resolution_ != previous_volumetric_cloud_full_resolution)
+        volumetric_cloud_.SetViewport(width, height, volumetric_cloud_full_resolution_);
 }
 
 void AppWindow::HandleReshapeEvent(int viewport_width, int viewport_height) {
     if (viewport_width > 0 && viewport_height > 0) {
-        volumetric_cloud_.SetViewport(viewport_width, viewport_height);
+        volumetric_cloud_.SetViewport(viewport_width, viewport_height, volumetric_cloud_full_resolution_);
         gbuffer_ = std::make_unique<GBuffer>(viewport_width, viewport_height);
         hdrbuffer_ = std::make_unique<HDRBuffer>(viewport_width, viewport_height);
         camera_.set_aspect(static_cast<float>(viewport_width) / viewport_height);
@@ -571,8 +655,11 @@ void AppWindow::HandleKeyboardEvent(int key) {
     case GLFW_KEY_ESCAPE:
         Close();
         break;
-    case GLFW_KEY_SPACE:
+    case GLFW_KEY_G:
         draw_gui_enable_ = !draw_gui_enable_;
+        break;
+    case GLFW_KEY_SPACE:
+        need_screenshot_ = true;
         break;
     }
 }

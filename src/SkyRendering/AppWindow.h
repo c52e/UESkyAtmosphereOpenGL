@@ -15,6 +15,7 @@
 #include "ShadowMap.h"
 #include "SMAA.h"
 #include "Serialization.h"
+#include "GltfModel.h"
 
 class AppWindow : public GLWindow, public ISerializable {
 public:
@@ -26,6 +27,7 @@ private:
     virtual void HandleReshapeEvent(int viewport_width, int viewport_height) override;
     virtual void HandleKeyboardEvent(int key) override;
     virtual void HandleMouseEvent(double mouse_x, double mouse_y) override;
+    virtual void HandleDropEvent(int count, const char** paths) override;
 
     void Init(const char* config_path);
     char config_path_[128];
@@ -33,9 +35,6 @@ private:
     void ProcessInput();
 
     void Render();
-    void RenderShadowMap(const glm::mat4& light_view_projection_matrix);
-    void RenderGBuffer(const GBuffer& gbuffer, const glm::mat4& vp);
-    void RenderViewport(const GBuffer& gbuffer, const glm::mat4& vp, glm::vec3 pos, const glm::mat4& light_view_projection_matrix);
 
     std::unique_ptr<GBuffer> gbuffer_;
     std::unique_ptr<HDRBuffer> hdrbuffer_;
@@ -50,9 +49,12 @@ private:
     AtmosphereRenderParameters atmosphere_render_parameters_;
     PostProcessParameters post_process_parameters_;
     SMAAOption smaa_option_ = SMAAOption::SMAA_PRESET_HIGH;
+    bool volumetric_cloud_full_resolution_ = false;
 
     std::vector<std::unique_ptr<MeshObject>> mesh_objects_;
     MeshObject* moon_;
+
+    std::vector<std::unique_ptr<GltfModel>> gltf_models_;
 
     float camera_speed_ = 1.f;
     double mouse_x_ = 0.f;
@@ -65,6 +67,9 @@ private:
     bool anisotropy_enable_ = true;
     bool vsync_enable_ = false;
 
+    bool need_screenshot_ = false;
+
+public:
     FIELD_DECLARATION_BEGIN(ISerializable)
         FIELD_DECLARE(earth_)
         FIELD_DECLARE(volumetric_cloud_)
@@ -81,5 +86,6 @@ private:
         FIELD_DECLARE(anisotropy_enable_)
         FIELD_DECLARE(vsync_enable_)
         FIELD_DECLARE(smaa_option_)
+        FIELD_DECLARE(volumetric_cloud_full_resolution_)
     FIELD_DECLARATION_END()
 };

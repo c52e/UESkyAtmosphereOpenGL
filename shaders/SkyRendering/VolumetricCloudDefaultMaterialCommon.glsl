@@ -12,13 +12,12 @@ layout(std140, binding = 3) uniform VolumetricCloudMaterialCommonBufferData{
 	SampleInfo uCloudMapSampleInfo;
 	SampleInfo uDetailSampleInfo;
 	SampleInfo uDisplacementSampleInfo;
-	vec2 padding0;
-	float uLodBias;
+	vec3 padding0;
 	float uDensity;
 };
 
-vec4 GetUVWLod(vec3 pos, SampleInfo sample_info) {
+vec4 GetUVWLod(vec3 pos, SampleInfo sample_info, vec3 camera_pos) {
 	vec3 uvw = pos * sample_info.frequency + vec3(sample_info.bias, 0.0);
-	float lod = log2(sample_info.k_lod * distance(pos, uCameraPos)) + uLodBias;
+	float lod = log2(sample_info.k_lod * distance(pos, camera_pos));
 	return vec4(uvw, lod);
 }

@@ -55,15 +55,18 @@ private:
 class ScopeImGuiTreeNode {
 public:
 	ScopeImGuiTreeNode(const char* label) {
-		b = ImGui::TreeNode(label);
+		enabled = (label != nullptr);
+		if (enabled)
+			b = ImGui::TreeNode(label);
 	}
 	~ScopeImGuiTreeNode() {
-		if (b) ImGui::TreePop();
+		if (enabled && b) ImGui::TreePop();
 	}
 	operator bool() {
-		return b;
+		return !enabled || b;
 	}
 private:
+	bool enabled{};
 	bool b{};
 };
 

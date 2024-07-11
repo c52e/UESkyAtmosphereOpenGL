@@ -16,20 +16,18 @@ struct VolumetricCloudDefaultMaterialCommonBufferData {
 	SampleInfo uCloudMapSampleInfo;
 	SampleInfo uDetailSampleInfo;
 	SampleInfo uDisplacementSampleInfo;
-	glm::vec2 padding0;
-	float uLodBias;
+	glm::vec3 padding0;
 	float uDensity;
 };
 
-static float CalKLod(const TextureWithInfo& tex, glm::vec2 viewport, const Camera& camera) {
+float CalKLod(const TextureWithInfo& tex, glm::vec2 viewport, const Camera& camera) {
 	auto max_width = static_cast<float>(glm::max(tex.x, glm::max(tex.y, tex.z)));
-	auto tan_half_fovy = glm::tan(glm::radians(camera.fovy) * 0.5f);
-	return max_width * tan_half_fovy / (tex.repeat_size * static_cast<float>(glm::min(viewport.x, viewport.y)));
+	return max_width * camera.tangent_half_fovy() * 2.0f / (tex.repeat_size * static_cast<float>(viewport.y));
 }
 
-VolumetricCloudDefaultMaterialCommon::VolumetricCloudDefaultMaterialCommon() {
+VolumetricCloudDefaultMaterialCommon::VolumetricCloudDefaultMaterialCommon(int cloud_map_size, int detail_size, int displacement_size) {
 	{
-		constexpr int w = 512;
+		const int w = cloud_map_size;
 		cloud_map_.texture.x = cloud_map_.texture.y = w;
 		cloud_map_.texture.tex.Create(GL_TEXTURE_2D);
 		glTextureStorage2D(cloud_map_.texture.id(), GetMipmapLevels(w, w), GL_RG8, w, w);
@@ -38,12 +36,12 @@ VolumetricCloudDefaultMaterialCommon::VolumetricCloudDefaultMaterialCommon() {
 		cloud_map_.program = {
 			"../shaders/SkyRendering/NoiseGen.comp",
 			{{16, 8}, {32, 16}, {32, 32}, {8, 8}, {16, 16}, {8, 4}},
-			[](const std::string& src) { return std::string("#version 460\n#define CLOUD_MAP_GEN\n") + src; },
+			[](const std::string& src) { return Replace(src, "CLOUD_MAP_GEN", "1"); },
 			"CLOUD_MAP"
 		};
 	}
 	{
-		constexpr int w = 128;
+		const int w = detail_size;
 		detail_.texture.x = detail_.texture.y = detail_.texture.z = w;
 		detail_.texture.tex.Create(GL_TEXTURE_3D);
 		glTextureStorage3D(detail_.texture.id(), GetMipmapLevels(w, w, w), GL_R8, w, w, w);
@@ -52,12 +50,12 @@ VolumetricCloudDefaultMaterialCommon::VolumetricCloudDefaultMaterialCommon() {
 		detail_.program = {
 			"../shaders/SkyRendering/NoiseGen.comp",
 			{{4, 4, 4}, {8, 4, 4}, {8, 8, 4}},
-			[](const std::string& src) { return std::string("#version 460\n#define DETAIL_MAP_GEN\n") + src; },
+			[](const std::string& src) { return Replace(src, "DETAIL_MAP_GEN", "1"); },
 			"DETAIL_MAP"
 		};
 	}
 	{
-		constexpr int w = 128;
+		const int w = displacement_size;
 		displacement_.texture.x = displacement_.texture.y = w;
 		displacement_.texture.tex.Create(GL_TEXTURE_2D);
 		glTextureStorage2D(displacement_.texture.id(), GetMipmapLevels(w, w), GL_RGBA8, w, w);
@@ -66,7 +64,7 @@ VolumetricCloudDefaultMaterialCommon::VolumetricCloudDefaultMaterialCommon() {
 		displacement_.program = {
 			"../shaders/SkyRendering/NoiseGen.comp",
 			{{16, 8}, {32, 16}, {32, 32}, {8, 8}, {16, 16}, {8, 4}},
-			[](const std::string& src) { return std::string("#version 460\n#define DISPLACEMENT_GEN\n") + src; },
+			[](const std::string& src) { return Replace(src, "DISPLACEMENT_GEN", "1"); },
 			"DISPLACEMENT"
 		};
 	}
@@ -75,24 +73,23 @@ VolumetricCloudDefaultMaterialCommon::VolumetricCloudDefaultMaterialCommon() {
 	glNamedBufferStorage(buffer_.id(), sizeof(VolumetricCloudDefaultMaterialCommonBufferData), NULL, GL_DYNAMIC_STORAGE_BIT);
 }
 
-void VolumetricCloudDefaultMaterialCommon::Update(glm::vec2 viewport, const Camera& camera, const glm::dvec2& offset_from_first, glm::vec2& additional_delta) {
+void VolumetricCloudDefaultMaterialCommon::Update(const UpdateParam& param, glm::vec2& additional_delta) {
 	cloud_map_.GenerateIfParameterChanged();
 	detail_.GenerateIfParameterChanged();
 	displacement_.GenerateIfParameterChanged();
 
 
 	VolumetricCloudDefaultMaterialCommonBufferData buffer;
-	buffer.uLodBias = lod_bias_;
 	buffer.uDensity = density_;
 
-	auto gen_sample_info = [&viewport, &camera](const TextureWithInfo& tex, SampleInfo& info, glm::dvec2 offset) {
+	auto gen_sample_info = [&param, this](const TextureWithInfo& tex, SampleInfo& info, glm::dvec2 offset) {
 		info.frequency = 1.0f / tex.repeat_size;
 		info.bias = glm::vec2(glm::fract(offset / static_cast<double>(tex.repeat_size)));
-		info.k_lod = CalKLod(tex, viewport, camera);
+		info.k_lod = glm::exp2(lod_bias_) * CalKLod(tex, param.viewport, param.camera);
 	};
 	const glm::vec2 kLocalWindDirection{ 1.0, 0.0 };
 	additional_delta = kLocalWindDirection * wind_speed_ * ImGui::GetIO().DeltaTime;
-	auto offset_from_first_cur = offset_from_first + glm::dvec2(additional_delta);
+	auto offset_from_first_cur = param.offset_from_first + glm::dvec2(additional_delta);
 	detail_offset_from_first_ += additional_delta * detail_wind_magnify_;
 	gen_sample_info(cloud_map_.texture, buffer.uCloudMapSampleInfo, offset_from_first_cur);
 	gen_sample_info(detail_.texture, buffer.uDetailSampleInfo, offset_from_first_cur + detail_offset_from_first_);
@@ -191,12 +188,12 @@ VolumetricCloudDefaultMaterial0::VolumetricCloudDefaultMaterial0() {
 	glNamedBufferStorage(buffer_.id(), sizeof(VolumetricCloudDefaultMaterial0BufferData), NULL, GL_DYNAMIC_STORAGE_BIT);
 }
 
-std::string VolumetricCloudDefaultMaterial0::ShaderPath() {
-	return "../shaders/SkyRendering/VolumetricCloudDefaultMaterial0.glsl";
+std::string VolumetricCloudDefaultMaterial0::ShaderSrc() {
+	return ReadWithPreprocessor("../shaders/SkyRendering/VolumetricCloudDefaultMaterial0.glsl");
 }
 
-void VolumetricCloudDefaultMaterial0::Update(glm::vec2 viewport, const Camera& camera, const glm::dvec2& offset_from_first, glm::vec2& additional_delta) {
-	materail_common_.Update(viewport, camera, offset_from_first, additional_delta);
+void VolumetricCloudDefaultMaterial0::Update(const UpdateParam& param, glm::vec2& additional_delta) {
+	materail_common_.Update(param, additional_delta);
 
 	VolumetricCloudDefaultMaterial0BufferData buffer;
 	buffer.uDetailParam = detail_param_;
@@ -221,8 +218,8 @@ void VolumetricCloudDefaultMaterial0::DrawGUI() {
 	ImGui::SliderFloat("Displacement Scale", &displacement_scale_, 0.0f, 1.0f);
 }
 
-std::string VolumetricCloudDefaultMaterial1::ShaderPath() {
-	return "../shaders/SkyRendering/VolumetricCloudDefaultMaterial1.glsl";
+std::string VolumetricCloudDefaultMaterial1::ShaderSrc() {
+	return ReadWithPreprocessor("../shaders/SkyRendering/VolumetricCloudDefaultMaterial1.glsl");
 }
 
 struct VolumetricCloudDefaultMaterial1BufferData{
@@ -241,8 +238,8 @@ VolumetricCloudDefaultMaterial1::VolumetricCloudDefaultMaterial1() {
 	glNamedBufferStorage(buffer_.id(), sizeof(VolumetricCloudDefaultMaterial1BufferData), NULL, GL_DYNAMIC_STORAGE_BIT);
 }
 
-void VolumetricCloudDefaultMaterial1::Update(glm::vec2 viewport, const Camera& camera, const glm::dvec2& offset_from_first, glm::vec2& additional_delta) {
-	materail_common_.Update(viewport, camera, offset_from_first, additional_delta);
+void VolumetricCloudDefaultMaterial1::Update(const UpdateParam& param, glm::vec2& additional_delta) {
+	materail_common_.Update(param, additional_delta);
 
 	VolumetricCloudDefaultMaterial1BufferData buffer;
 	buffer.uBaseDensityThreshold = base_density_threshold_;

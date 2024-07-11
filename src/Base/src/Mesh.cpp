@@ -1,11 +1,14 @@
 #include "Mesh.h"
 
-#include <assert.h>
 #include <cmath>
 #include <fstream>
+#include <filesystem>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <tiny_gltf.h>
+
+#include "log.h"
 
 inline glm::vec3 GetAnyOrthogonalVector(const glm::vec3& N) {
     if (glm::abs(N.z) < 1e-6f)
@@ -14,10 +17,10 @@ inline glm::vec3 GetAnyOrthogonalVector(const glm::vec3& N) {
 }
 
 Mesh::Mesh(const MeshVertices& vertices) {
-    assert(vertices.mode == GL_TRIANGLES
+    ASSERT(vertices.mode == GL_TRIANGLES
         || vertices.mode == GL_TRIANGLE_STRIP
         || vertices.mode == GL_TRIANGLE_FAN);
-    assert(vertices.positions.size() == vertices.normals.size());
+    ASSERT(vertices.positions.size() == vertices.normals.size());
 
     auto vertices_num = vertices.positions.size();
     mode = vertices.mode;
@@ -108,16 +111,16 @@ MeshVertices CreateSphere() {
             float ySegment = (float)y / (float)Y_SEGMENTS;
             float xPos = cos(xSegment * 2.0f * pi) * sin(ySegment * pi);
             float yPos = cos(ySegment * pi);
-            float zPos = sin(xSegment * 2.0f * pi) * sin(ySegment * pi);
+            float zPos = -sin(xSegment * 2.0f * pi) * sin(ySegment * pi);
 
-            float xTan = sin(xSegment * 2.0f * pi);
+            float xTan = -sin(xSegment * 2.0f * pi);
             float yTan = 0;
             float zTan = -cos(xSegment * 2.0f * pi);
 
             vertices.positions.push_back({ xPos, yPos, zPos });
             vertices.normals.push_back({ xPos, yPos, zPos });
             vertices.tangents.push_back({ xTan , yTan, zTan });
-            vertices.uvs.push_back({ 1.0f - xSegment, 1.0f - ySegment });
+            vertices.uvs.push_back({ xSegment, 1.0f - ySegment });
         }
     }
 
@@ -125,14 +128,14 @@ MeshVertices CreateSphere() {
     for (int y = 0; y < Y_SEGMENTS; ++y) {
         if (!oddRow) {
             for (int x = 0; x <= X_SEGMENTS; ++x) {
-                vertices.indices.push_back((y + 1) * (X_SEGMENTS + 1) + x);
                 vertices.indices.push_back(y * (X_SEGMENTS + 1) + x);
+                vertices.indices.push_back((y + 1) * (X_SEGMENTS + 1) + x);
             }
         }
         else {
             for (int x = X_SEGMENTS; x >= 0; --x) {
-                vertices.indices.push_back(y * (X_SEGMENTS + 1) + x);
                 vertices.indices.push_back((y + 1) * (X_SEGMENTS + 1) + x);
+                vertices.indices.push_back(y * (X_SEGMENTS + 1) + x);
             }
         }
         oddRow = !oddRow;
@@ -140,23 +143,73 @@ MeshVertices CreateSphere() {
     return vertices;
 }
 
+namespace fs = std::filesystem;
+
+bool LoadModel(tinygltf::Model& model, const char* path) {
+    tinygltf::TinyGLTF gltf_ctx;
+    std::string err;
+    std::string warn;
+    std::string ext = fs::path(path).extension().string();
+
+    LOG_INFO("Loading {}", path);
+
+    bool ret = false;
+    if (ext.compare(".glb") == 0) {
+        ret = gltf_ctx.LoadBinaryFromFile(&model, &err, &warn, path);
+    }
+    else {
+        ret = gltf_ctx.LoadASCIIFromFile(&model, &err, &warn, path);
+    }
+
+    if (!warn.empty()) {
+        LOG_WARN("{}", warn);
+    }
+
+    if (!err.empty()) {
+        LOG_ERROR("{}", err);
+    }
+
+    return ret;
+}
+
 MeshVertices ReadMeshFile(const char* path) {
+    tinygltf::Model m;
+    if (!LoadModel(m, path)) {
+        throw std::runtime_error("Failed to parse glTF\n");
+    }
+
     MeshVertices vertices;
     vertices.mode = GL_TRIANGLES;
 
-    std::ifstream in;
-    in.open(path, std::ios::binary);
-    if (!in)
-        throw std::runtime_error(std::string("Mesh File Not Exist: ") + path);
-    unsigned int vertices_count_;
-    unsigned int indices_count_;
-    in.read(reinterpret_cast<char*>(&vertices_count_), sizeof(vertices_count_));
-    in.read(reinterpret_cast<char*>(&indices_count_), sizeof(indices_count_));
-    vertices.positions.resize(vertices_count_);
-    vertices.normals.resize(vertices_count_);
-    vertices.indices.resize(indices_count_);
-    in.read(reinterpret_cast<char*>(vertices.positions.data()), vertices_count_ * sizeof(vertices.positions[0]));
-    in.read(reinterpret_cast<char*>(vertices.normals.data()), vertices_count_ * sizeof(vertices.normals[0]));
-    in.read(reinterpret_cast<char*>(vertices.indices.data()), indices_count_ * sizeof(vertices.indices[0]));
+    auto node_i = m.scenes[0].nodes[0];
+    auto mesh_i = m.nodes[node_i].mesh;
+    auto& mesh = m.meshes[mesh_i];
+    auto& primitive = mesh.primitives[0];
+
+    ASSERT(primitive.indices == 0);
+    ASSERT(primitive.attributes["POSITION"] == 1);
+    ASSERT(primitive.attributes["NORMAL"] == 2);
+
+    ASSERT(m.accessors[0].componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT);
+    ASSERT(m.accessors[0].type == TINYGLTF_TYPE_SCALAR);
+    ASSERT(m.accessors[1].componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+    ASSERT(m.accessors[1].type == TINYGLTF_TYPE_VEC3);
+    ASSERT(m.accessors[2].componentType == TINYGLTF_COMPONENT_TYPE_FLOAT);
+    ASSERT(m.accessors[2].type == TINYGLTF_TYPE_VEC3);
+
+    auto copydata = [&m](int i, auto& v) {
+        auto& accessor = m.accessors[i];
+        v.resize(accessor.count);
+        auto offset = accessor.byteOffset;
+        auto size = sizeof(v[0]) * v.size();
+
+        auto& bufferView = m.bufferViews[accessor.bufferView];
+        auto& buffer = m.buffers[bufferView.buffer];
+        memcpy(v.data(), buffer.data.data() + bufferView.byteOffset + offset, size);
+    };
+    copydata(0, vertices.indices);
+    copydata(1, vertices.positions);
+    copydata(2, vertices.normals);
+
     return vertices;
 }

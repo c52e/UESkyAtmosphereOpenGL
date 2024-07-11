@@ -1,0 +1,52 @@
+/*
+This code contains portions of source code from 
+https://github.com/ebruneton/precomputed_atmospheric_scattering/blob/master/atmosphere/functions.glsl
+Copyright (c) 2017 Eric Bruneton
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+3. Neither the name of the copyright holders nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+*/
+
+#version 460
+#include "Atmosphere.glsl"
+
+layout(binding = 0) uniform sampler2D transmittance_texture;
+
+layout(binding = 0, IRRADIANCE_FORMAT) uniform image2D delta_irradiance_image;
+
+vec3 ComputeDirectIrradiance(float r, float mu_s) {
+    float alpha_s = sun_angular_radius;
+    // Approximate average of the cosine factor mu_s over the visible fraction of
+    // the Sun disc.
+    float average_cosine_factor =
+    mu_s < -alpha_s ? 0.0 : (mu_s > alpha_s ? mu_s :
+        (mu_s + alpha_s) * (mu_s + alpha_s) / (4.0 * alpha_s));
+
+    return solar_illuminance *
+        GetTransmittanceToTopAtmosphereBoundary(
+            transmittance_texture, r, mu_s) * average_cosine_factor;
+
+}
+
+vec3 ComputeDirectIrradianceTexture(vec2 frag_coord) {
+  float r;
+  float mu_s;
+  GetRMuSFromIrradianceTextureUv(frag_coord, imageSize(delta_irradiance_image), r, mu_s);
+  return ComputeDirectIrradiance(r, mu_s);
+}
+
+void main() {
+	vec2 frag_coord = vec2(gl_GlobalInvocationID.xy) + 0.5;
+    vec3 delta_irradiance = ComputeDirectIrradianceTexture(frag_coord);
+    imageStore(delta_irradiance_image, ivec2(gl_GlobalInvocationID.xy), vec4(delta_irradiance, 1.0));
+}

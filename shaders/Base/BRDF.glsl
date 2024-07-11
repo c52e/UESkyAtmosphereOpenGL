@@ -1,23 +1,31 @@
 #include "Common.glsl"
 
+#ifdef SPECTRUM_RENDERING
+#define SpectrumType float
+#else
+#define SpectrumType vec3
+#endif
+
 struct MaterialData {
-	vec3 F0;
-	vec3 diffuse;
+	SpectrumType F0;
+	SpectrumType diffuse;
 	vec3 normal;
 	float roughness;
+	float ao;
 };
 
-MaterialData LoadMeterialData(sampler2D albedo_tex, sampler2D normal_tex, sampler2D orm_tex, vec2 uv) {
-	vec3 albedo = texture(albedo_tex, uv).rgb;
-	vec3 normal = texture(normal_tex, uv).rgb;
-	vec3 orm = texture(orm_tex, uv).rgb;
+MaterialData LoadMeterialData(sampler2D albedo_tex, sampler2D normal_tex, sampler2D orm_tex, ivec2 xy) {
+	SpectrumType albedo = SpectrumType(texelFetch(albedo_tex, xy, 0));
+	vec3 normal = texelFetch(normal_tex, xy, 0).rgb;
+	vec3 orm = texelFetch(orm_tex, xy, 0).rgb;
 
 	MaterialData data;
 	float metallic = orm.b;
-	data.F0 = mix(vec3(0.04), albedo, metallic);
+	data.F0 = mix(SpectrumType(0.04), albedo, metallic);
 	data.diffuse = albedo - albedo * metallic;
 	data.normal = normal;
 	data.roughness = orm.g;
+	data.ao = orm.r;
 
 	return data;
 }
@@ -29,7 +37,7 @@ float Pow5(float x) {
 	return x2 * x2 * x;
 }
 
-vec3 F_Schlick(float HdotV, vec3 F0) {
+SpectrumType F_Schlick(float HdotV, SpectrumType F0) {
 	return F0 + (1.0 - F0) * Pow5(1.0 - HdotV);
 }
 
@@ -67,14 +75,14 @@ vec3 ImportanceSampleGGX(vec2 E, float a, vec3 N) {
 }
 //--------------------------------------
 
-vec3 BRDF(float NdotL, float NdotV, float NdotH, float HdotV, MaterialData data) {
+SpectrumType BRDF(float NdotL, float NdotV, float NdotH, float HdotV, MaterialData data) {
 	float a = data.roughness * data.roughness;
 	float D = min(D_GGX(a, NdotH), 1e9);
 	float Vis = Vis_SmithJointApprox(a, NdotV, NdotL);
-	vec3 F = F_Schlick(HdotV, data.F0);
+	SpectrumType F = F_Schlick(HdotV, data.F0);
 
-	vec3 specular = vec3(D * Vis);
-	vec3 diffuse = INV_PI * data.diffuse;
+	SpectrumType specular = SpectrumType(D * Vis);
+	SpectrumType diffuse = INV_PI * data.diffuse;
 	return mix(diffuse, specular, F);
 }
 
@@ -105,6 +113,7 @@ vec3 GetSHIrradiance(vec3 N, vec4 Llm[9]) {
 		+ 2.0 * c2 * (x * L11 + y * L1_1 + z * L10);
 }
 
+#ifndef SPECTRUM_RENDERING
 vec3 GetAmbient(sampler2D env_brdf_lut, float roughness_lod_max, samplerCube prefiltered_radiance_texture,
 		vec3 V, MaterialData data, vec4 Llm[9]) {
 	vec3 N = data.normal;
@@ -126,5 +135,26 @@ vec3 GetAmbient(sampler2D env_brdf_lut, float roughness_lod_max, samplerCube pre
 	vec2 brdf = texture(env_brdf_lut, vec2(NdotV, data.roughness)).rg;
 	vec3 specular = prefiltered_radiance * (data.F0 * brdf.x + brdf.y);
 
-	return diffuse + specular;
+	return data.ao * (diffuse + specular);
+}
+#endif
+
+vec3 CosineSample(vec2 E, vec3 N, out float pdf) {
+#if 0
+	float sin_theta = sqrt(E.x);
+	float cos_theta = sqrt(clamp(1.0 - sin_theta * sin_theta, 0, 1));
+	vec3 t0, t1;
+	CreateOrthonormalBasis(N, t0, t1);
+	float phi = 2.0 * PI * E.y;
+	pdf = INV_PI * cos_theta;
+	return vec3(sin_theta * sin(phi) * t0 + sin_theta * cos(phi) * t1 + cos_theta * N);
+#else
+	// https://cseweb.ucsd.edu/~tzli/cse272/wi2023/lectures/28_misc.pdf
+	float theta = 2.0 * PI * E.x;
+	E.y = 2.0 * E.y - 1.0;
+	vec3 spherePoint = vec3(sqrt(1.0 - E.y * E.y) * vec2(cos(theta), sin(theta)), E.y);
+	vec3 res = normalize(N + spherePoint);
+	pdf = dot(res, N);
+	return res;
+#endif
 }

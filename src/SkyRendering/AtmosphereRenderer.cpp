@@ -8,17 +8,16 @@
 #include "Utils.h"
 #include "Textures.h"
 #include "Samplers.h"
-#include "ScreenRectangle.h"
 #include "VolumetricCloud.h"
 #include "ImageLoader.h"
 
 constexpr GLsizei kSkyViewTextureWidth = 128;
 constexpr GLsizei kSkyViewTextureHeight = 128;
-constexpr GLenum kSkyViewTextureInternalFormat = GL_RGBA32F;
+constexpr GLenum kSkyViewTextureInternalFormat = GL_RGBA16F;
 
 constexpr GLsizei kAerialPerspectiveTextureWidth = 32;
 constexpr GLsizei kAerialPerspectiveTextureHeight = 32;
-constexpr GLenum kAerialPerspectiveTextureInternalFormat = GL_RGBA32F;
+constexpr GLenum kAerialPerspectiveTextureInternalFormat = GL_RGBA16F;
 
 constexpr GLsizei kEnvironmentLuminanceTextureWidth = 128;
 
@@ -45,8 +44,6 @@ struct AtmosphereRenderBufferData {
     float uInvShadowFroxelMaxDistance;
     float blocker_kernel_size_k;
     float pcss_size_k;
-
-    glm::mat4 uCloudShadowMapMat;
 };
 
 static void AssignBufferData(const AtmosphereRenderParameters& parameters, const Earth& earth, AtmosphereRenderBufferData& data) {
@@ -102,7 +99,8 @@ AtmosphereRenderer::AtmosphereRenderer(const AtmosphereRenderInitParameters& ini
             << "#define DITHER_SAMPLE_POINT_ENABLE " << (dither_sample_point_enable ? "1\n" : "0\n")
             << "#define USE_SKY_VIEW_LUT " << (init_parameters.use_sky_view_lut ? "1\n" : "0\n")
             << "#define USE_AERIAL_PERSPECTIVE_LUT " << (init_parameters.use_aerial_perspective_lut ? "1\n" : "0\n")
-            << "#define ROUGHNESS_COUNT " << IBL::kRoughnessCount << "\n";
+            << "#define ROUGHNESS_COUNT " << IBL::kRoughnessCount << "\n"
+            << "#define USE_SCATTERING_LUT " << (init_parameters.use_scattering_lut ? "1\n" : "0\n");
         return ss.str();
     };
 
@@ -153,11 +151,18 @@ AtmosphereRenderer::AtmosphereRenderer(const AtmosphereRenderInitParameters& ini
     constexpr auto w = kEnvironmentLuminanceTextureWidth;
     glTextureStorage2D(environment_luminance_texture_.id(), GetMipmapLevels(w, w), GL_RGBA16F, w, w);
 
-    render_program_ = [generate_shader_header, dither = init_parameters.raymarching_dither_sample_point_enable]() {
-        auto atmosphere_render_fragment_str = generate_shader_header(
-            "#define ATMOSPHERE_RENDER_FRAGMENT_SHADER\n", dither)
-            + ReadWithPreprocessor("../shaders/SkyRendering/AtmosphereRenderer.glsl");
-        return GLProgram(kCommonVertexSrc, atmosphere_render_fragment_str.c_str());
+    render_program_ = {
+        "../shaders/SkyRendering/AtmosphereRenderer.glsl",
+        {{8, 8}, {8, 4}, {16, 4}, {16, 8}, {16, 16}, {32, 8}, {32, 16}},
+        [generate_shader_header, dither = init_parameters.raymarching_dither_sample_point_enable](const std::string& src) {
+            return generate_shader_header("#define ATMOSPHERE_RENDER_FRAGMENT_SHADER\n", dither) + src;
+        },
+        "VIEWPORT_RENDER"
+    };
+
+    froxel_accumulate_program_ = {
+        "../shaders/SkyRendering/ShadowFroxelAccumulate.comp",
+        {{8, 4, 1}, {8, 8, 1}, {16, 4, 1}, {16, 8, 1}},
     };
 }
 
@@ -165,10 +170,15 @@ void AtmosphereRenderer::Render(const Earth& earth, const VolumetricCloud& volum
     AtmosphereRenderBufferData atmosphere_render_buffer_data_;
     AssignBufferData(parameters, earth, atmosphere_render_buffer_data_);
 
-    auto cloud_shadow_map = volumetric_cloud.GetShadowMap();
     auto cloud_shadow_froxel = volumetric_cloud.GetShadowFroxel();
-    atmosphere_render_buffer_data_.uCloudShadowMapMat = cloud_shadow_map.light_vp_inv_model;
     atmosphere_render_buffer_data_.uInvShadowFroxelMaxDistance = cloud_shadow_froxel.inv_max_distance;
+
+    {
+        PERF_MARKER("ShadowFroxelAccumulate")
+        GLBindImageTextures({ cloud_shadow_froxel.shadow_froxel });
+        glUseProgram(froxel_accumulate_program_.id());
+        froxel_accumulate_program_.Dispatch(glm::vec2(cloud_shadow_froxel.dim));
+    }
 
     sun_direction_ = atmosphere_render_buffer_data_.sun_direction;
     aerial_perspective_lut_max_distance_ = atmosphere_render_buffer_data_.aerial_perspective_lut_max_distance;
@@ -178,13 +188,13 @@ void AtmosphereRenderer::Render(const Earth& earth, const VolumetricCloud& volum
 
     glBindBufferBase(GL_UNIFORM_BUFFER, 2, ibl_.env_radiance_sh_buffer());
 
-    auto bind_textures = [this, &earth, &parameters, &cloud_shadow_map, &cloud_shadow_froxel]() {
+    auto bind_textures = [this, &earth, &parameters, &cloud_shadow_froxel]() {
         GLBindTextures({ earth.atmosphere().transmittance_texture(),
                     earth.atmosphere().multiscattering_texture(),
-                    parameters.depth_stencil_texture,
-                    parameters.albedo,
-                    parameters.normal,
-                    parameters.orm,
+                    parameters.gbuffer->depth(),
+                    parameters.gbuffer->albedo(),
+                    parameters.gbuffer->normal(),
+                    parameters.gbuffer->orm(),
                     parameters.shadow_map_texture,
                     Textures::Instance().blue_noise(),
                     Textures::Instance().star_luminance(),
@@ -193,10 +203,12 @@ void AtmosphereRenderer::Render(const Earth& earth, const VolumetricCloud& volum
                     aerial_perspective_luminance_texture_.id(),
                     aerial_perspective_transmittance_texture_.id(),
                     parameters.shadow_map_texture,
-                    cloud_shadow_map.shadow_map,
                     cloud_shadow_froxel.shadow_froxel,
                     ibl_.prefiltered_radiance(),
-                    Textures::Instance().env_brdf_lut() });
+                    Textures::Instance().env_brdf_lut(),
+                    parameters.gbuffer->pixel_visibility(),
+                    earth.atmosphere().scattering_texture(),
+                    earth.atmosphere().single_mie_scattering_texture(), });
         GLBindSamplers({ Samplers::GetLinearNoMipmapClampToEdge(),
                     Samplers::GetLinearNoMipmapClampToEdge(),
                     0u,
@@ -211,10 +223,12 @@ void AtmosphereRenderer::Render(const Earth& earth, const VolumetricCloud& volum
                     Samplers::GetLinearNoMipmapClampToEdge(),
                     Samplers::GetLinearNoMipmapClampToEdge(),
                     Samplers::GetNearestClampToEdge(),
-                    cloud_shadow_map.sampler,
                     cloud_shadow_froxel.sampler,
                     Samplers::GetAnisotropySampler(Samplers::Wrap::CLAMP_TO_EDGE),
-                    Samplers::GetLinearNoMipmapClampToEdge(), });
+                    Samplers::GetLinearNoMipmapClampToEdge(),
+                    0u,
+                    Samplers::GetLinearNoMipmapClampToEdge(),
+                    Samplers::GetLinearNoMipmapClampToEdge() });
     };
     bind_textures();
 
@@ -245,7 +259,9 @@ void AtmosphereRenderer::Render(const Earth& earth, const VolumetricCloud& volum
     bind_textures();
     {
         PERF_MARKER("Render")
+        GLBindImageTextures({ parameters.hdrbuffer->hdr_texture() });
         glUseProgram(render_program_.id());
-        ScreenRectangle::Instance().Draw();
+        render_program_.Dispatch(parameters.gbuffer->dim());
     }
+    glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }

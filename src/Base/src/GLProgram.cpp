@@ -1,6 +1,8 @@
 #include "GLProgram.h"
 
 #include <iostream>
+#include <string>
+#include <sstream>
 #include <array>
 #include <stdexcept>
 #include <vector>
@@ -11,21 +13,65 @@
 
 namespace {
 
+std::vector<std::string> SplitLines(const std::string& src, char c) {
+	std::vector<std::string> res;
+	size_t i = 0;
+	size_t j = 0;
+	for (;;) {
+		j = src.find(c, i);
+		if (j == std::string::npos)
+			break;
+		res.push_back(src.substr(i, j - i));
+		i = j + 1;
+	}
+	res.push_back(src.substr(i, src.size() - 1));
+	return res;
+}
+
+std::string AnalyzeErrorInfo(const std::string& src, const std::string& info) {
+	//return info;
+	std::regex pattern(R"(0\((\d+)\) : error C.+?\n)");
+
+	// https://en.cppreference.com/w/cpp/regex/regex_iterator
+	auto words_begin = std::sregex_iterator(info.begin(), info.end(), pattern);
+	auto words_end = std::sregex_iterator();
+	std::stringstream ss;
+
+	auto lines = SplitLines(src, '\n');
+	for (auto i = words_begin; i != words_end; ++i) {
+		auto match = *i;
+		auto match_str = match.str();
+		int line = std::stoi(match.str(1));
+		auto index = static_cast<size_t>(line) - 1;
+		if (index >= lines.size())
+			throw std::runtime_error("Unexpected error line number");
+		ss << "    " << match_str;
+		ss << "    |\n";
+		if (index > 0)
+			ss << "    | " << lines[index - 1] << "\n";
+		ss << "  * | " << lines[index] << "\n";
+		if (index + 1 < lines.size())
+			ss << "    | " << lines[index + 1] << "\n";
+		ss << "    |\n";
+	}
+	return ss.str();
+}
+
 class Shader {
 public:
-	Shader(GLenum type, const char* src, const char* identifier) {
+	Shader(GLenum type, const char* src, const std::string& identifier) {
 		id_ = glCreateShader(type);
 		glShaderSource(id_, 1, &src, nullptr);
 		glCompileShader(id_);
 
 		GLint success;
-		std::array<char, 1024> info{};
+		std::array<char, 4096> info{};
 		glGetShaderiv(id_, GL_COMPILE_STATUS, &success);
 		if (!success) {
 			glGetShaderInfoLog(id_, static_cast<GLsizei>(info.size()), nullptr, info.data());
 			glDeleteShader(id_);
 			throw std::runtime_error(std::string("Error while compiling ") 
-				+ identifier + ":\n" + info.data());
+				+ identifier + ":\n" + AnalyzeErrorInfo(src, info.data()));
 		}
 	}
 
@@ -59,23 +105,19 @@ GLuint CreateProgram(const std::vector<GLuint>& shaders) {
 
 }
 
-GLProgram::GLProgram(const char* vertex_src, const char* fragment_src, GLuint external_fragment_shader) {
+GLProgram::GLProgram(const char* vertex_src, const char* fragment_src, const Params& params) {
 #define STR(NAME) #NAME
-	Shader vertex(GL_VERTEX_SHADER, vertex_src, STR(GL_VERTEX_SHADER));
-	Shader fragment(GL_FRAGMENT_SHADER, fragment_src, STR(GL_FRAGMENT_SHADER));
+	Shader vertex(GL_VERTEX_SHADER, vertex_src, std::string("Vertex Shader: ") + params.tag);
+	Shader fragment(GL_FRAGMENT_SHADER, fragment_src, std::string("Fragment Shader: ") + params.tag);
 	
 	std::vector shaders{ vertex.Id(), fragment.Id() };
-	if (external_fragment_shader != 0)
-		shaders.push_back(external_fragment_shader);
 	id_ = CreateProgram(shaders);
 }
 
-GLProgram::GLProgram(const char* compute_src, GLuint external_compute_shader) {
-	Shader compute(GL_COMPUTE_SHADER, compute_src, STR(GL_COMPUTE_SHADER));
+GLProgram::GLProgram(const char* compute_src, const Params& params) {
+	Shader compute(GL_COMPUTE_SHADER, compute_src, std::string("Compute Shader: ") + params.tag);
 
 	std::vector shaders{ compute.Id() };
-	if (external_compute_shader != 0)
-		shaders.push_back(external_compute_shader);
 	id_ = CreateProgram(shaders);
 }
 

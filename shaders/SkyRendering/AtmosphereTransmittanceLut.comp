@@ -1,0 +1,33 @@
+#version 460
+#include "Atmosphere.glsl"
+
+vec3 ComputeTransmittanceToTopAtmosphereBoundary(float r, float mu) {
+    const float SAMPLE_COUNT = transmittance_steps;
+
+    float dx = DistanceToTopAtmosphereBoundary(r, mu) / SAMPLE_COUNT;
+
+    vec3 optical_length = vec3(0.0);
+    for (float i = 0.5; i < SAMPLE_COUNT; ++i) {
+        float d_i = i * dx;
+        // Distance between the current sample point and the planet center.
+        float r_i = sqrt(d_i * d_i + 2.0 * r * mu * d_i + r * r);
+
+        float altitude_i = r_i - bottom_radius;
+
+        optical_length += GetExtinctionCoefficient(altitude_i) * dx;
+    }
+#if STORE_OPTICAL_LENGTH_IN_TRANSMITTANCE_TEXTURE
+    return optical_length;
+#else
+    return exp(-optical_length);
+#endif
+}
+
+layout(binding = 0, TRANSMITTANCE_FORMAT) uniform image2D transmittance_image;
+
+void main() {
+    float r, mu;
+    GetRMuFromTransmittanceTextureIndex(ivec2(gl_GlobalInvocationID.xy), imageSize(transmittance_image), r, mu);
+    vec3 transmittance = ComputeTransmittanceToTopAtmosphereBoundary(r, mu);
+    imageStore(transmittance_image, ivec2(gl_GlobalInvocationID.xy), vec4(transmittance, 1.0));
+}

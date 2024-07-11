@@ -7,8 +7,12 @@
 class GLProgram {
 public:
 	GLProgram() = default;
-	GLProgram(const char* vertex_src, const char* fragment_src, GLuint external_fragment_shader = 0);
-	GLProgram(const char* compute_src, GLuint external_compute_shader = 0);
+
+	struct Params {
+		std::string tag = "";
+	};
+	GLProgram(const char* vertex_src, const char* fragment_src, const Params& params = {});
+	GLProgram(const char* compute_src, const Params& params = {});
 	~GLProgram();
 	GLProgram(const GLProgram&) = delete;
 	GLProgram(GLProgram&& rhs) noexcept

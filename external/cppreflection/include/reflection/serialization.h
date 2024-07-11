@@ -23,10 +23,6 @@
 namespace reflection {
 
 class ISerialization : public IReflectionBase<ISerialization> {
-public:
-    void Serialize(rapidjson::PrettyWriter<rapidjson::StringBuffer>& writer);
-
-    void Deserialize(const rapidjson::Value&);
 };
 
 template<>
@@ -36,6 +32,16 @@ public:
 
     virtual void Deserialize(void*, const rapidjson::Value&) const = 0;
 };
+
+template<class T>
+void Serialize(const T& object, rapidjson::PrettyWriter<rapidjson::StringBuffer>& writer) {
+    Type<ISerialization, T>::GetIType()->Serialize(&object, writer);
+}
+
+template<class T>
+void Deserialize(T& object, const rapidjson::Value& value) {
+    Type<ISerialization, T>::GetIType()->Deserialize(&object, value);
+}
 
 template<>
 class Type<ISerialization, int> : public TypeBase<ISerialization, int> {
@@ -132,7 +138,7 @@ public:
 };
 
 template<class T>
-class Type<ISerialization, T, std::enable_if_t<std::is_base_of_v<ISerialization, T>>>
+class Type<ISerialization, T, std::enable_if_t<std::is_base_of_v<ISerialization, T> || IsReflectableStruct<ISerialization, T>::value>>
     : public TypeBase<ISerialization, T> {
 public:
     using ValueType = T;
@@ -140,7 +146,7 @@ public:
     void Serialize(const void* addr, rapidjson::PrettyWriter<rapidjson::StringBuffer>& writer) const override {
         const auto& v = *static_cast<const ValueType*>(addr);
         writer.StartObject();
-        for (const auto& [name, fun] : static_cast<const ISerialization&>(v).GetFieldTable()) {
+        for (const auto& [name, fun] : GetFieldTable(v, static_cast<ISerialization*>(nullptr))) {
             writer.String(name.c_str());
             auto info = fun(const_cast<ValueType*>(&v));
             info.type->Serialize(info.address, writer);
@@ -151,7 +157,7 @@ public:
     void Deserialize(void* addr, const rapidjson::Value& value) const override {
         R_ASSERT(value.IsObject());
         auto& v = *static_cast<ValueType*>(addr);
-        for (const auto& [name, fun] : static_cast<const ISerialization&>(v).GetFieldTable()) {
+        for (const auto& [name, fun] : GetFieldTable(v, static_cast<ISerialization*>(nullptr))) {
             auto itr = value.FindMember(name.c_str());
             if (itr != value.MemberEnd()) {
                 auto info = fun(&v);
@@ -179,7 +185,7 @@ public:
             writer.String(kTypeKey);
             writer.String(typeid(*v).name());
             writer.String(kDataKey);
-            v->Serialize(writer);
+            Type<ISerialization, _Ty>::GetIType()->Serialize(v.get(), writer);
             writer.EndObject();
         }
         else {
@@ -199,7 +205,7 @@ public:
 
             auto dataitr = value.FindMember(kDataKey);
             R_ASSERT(dataitr != value.MemberEnd());
-            v->Deserialize(dataitr->value);
+            Type<ISerialization, _Ty>::GetIType()->Deserialize(v.get(), dataitr->value);
         }
     }
 };
@@ -366,29 +372,5 @@ template<template <class _Kty, class _Ty, class _Hasher, class _Keyeq, class _Al
             _SerializationMapTypeHelper<ValueType>::Deserialize(addr, value);
         }
 };
-
-inline void ISerialization::Serialize(rapidjson::PrettyWriter<rapidjson::StringBuffer>& writer) {
-    writer.StartObject();
-    for (const auto& [name, fun] : GetFieldTable()) {
-        writer.String(name.c_str());
-        auto info = fun(this);
-        info.type->Serialize(info.address, writer);
-    }
-    writer.EndObject();
-}
-
-inline void ISerialization::Deserialize(const rapidjson::Value& value) {
-    R_ASSERT(value.IsObject());
-    for (const auto& [name, fun] : GetFieldTable()) {
-        auto itr = value.FindMember(name.c_str());
-        if (itr != value.MemberEnd()) {
-            auto info = fun(this);
-            info.type->Deserialize(info.address, itr->value);
-        }
-        else {
-            FIELD_NOT_FOUND_HANDLE("Field \"" + name + "\" not found");
-        }
-    }
-}
 
 } // namespace reflection

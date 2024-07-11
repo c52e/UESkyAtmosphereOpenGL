@@ -1,0 +1,23 @@
+#version 460
+
+#include "VolumetricCloudCommon.glsl"
+#include "Common.glsl"
+#include "VolumetricCloudShadowInterface.glsl"
+
+layout(binding = 0) uniform sampler2D cloud_shadow_map;
+layout(binding = 1) uniform sampler2D depth_tex;
+
+layout(binding = 0, r16) uniform image2D visibility_image;
+
+void main() {
+    ivec2 image_size = imageSize(visibility_image);
+    float depth = texelFetch(depth_tex, ivec2(gl_GlobalInvocationID.xy), 0).x;
+    if (depth == 0.0)
+        return;
+    vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / image_size.xy;
+    vec3 light_ndc = UvDepthToPos(uScreenToShadowMap, uv, depth);
+    float visibility = imageLoad(visibility_image, ivec2(gl_GlobalInvocationID.xy)).x;
+    float transmittance = SampleCloudShadowTransmittance(cloud_shadow_map, light_ndc);
+    visibility = min(visibility, transmittance);
+    imageStore(visibility_image, ivec2(gl_GlobalInvocationID.xy), vec4(visibility));
+}

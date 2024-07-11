@@ -49,17 +49,29 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\shaders\SkyRendering\Atmosphere.glsl" />
+    <None Include="..\..\shaders\SkyRendering\AtmosphereDirectIrradiance.comp" />
+    <None Include="..\..\shaders\SkyRendering\AtmosphereIndirectIrradiance.comp" />
     <None Include="..\..\shaders\SkyRendering\AtmosphereInterface.glsl" />
+    <None Include="..\..\shaders\SkyRendering\AtmosphereMultipleScattering.comp" />
+    <None Include="..\..\shaders\SkyRendering\AtmosphereMultiscatteringLut.comp" />
     <None Include="..\..\shaders\SkyRendering\AtmosphereRenderer.glsl" />
+    <None Include="..\..\shaders\SkyRendering\AtmosphereScatteringDensity.comp" />
+    <None Include="..\..\shaders\SkyRendering\AtmosphereScatteringLut.comp" />
+    <None Include="..\..\shaders\SkyRendering\AtmosphereTransmittanceLut.comp" />
     <None Include="..\..\shaders\SkyRendering\CheckerboardGen.comp" />
+    <None Include="..\..\shaders\SkyRendering\ShadowFroxelAccumulate.comp" />
+    <None Include="..\..\shaders\SkyRendering\Terrain.glsl" />
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudDefaultMaterial0.glsl" />
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudDefaultMaterial1.glsl" />
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudDefaultMaterialCommon.glsl" />
+    <None Include="..\..\shaders\SkyRendering\VolumetricCloudLightFroxel.comp" />
+    <None Include="..\..\shaders\SkyRendering\VolumetricCloudLightFroxelAccumulate.comp" />
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudPathTracing.comp" />
+    <None Include="..\..\shaders\SkyRendering\VolumetricCloudRenderCommon.glsl" />
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudShadowFroxel.comp" />
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudShadowInterface.glsl" />
     <None Include="..\..\shaders\SkyRendering\Common.glsl" />
-    <None Include="..\..\shaders\SkyRendering\EarthRender.frag" />
+    <None Include="..\..\shaders\SkyRendering\EarthRender.glsl" />
     <None Include="..\..\shaders\SkyRendering\NoiseGen.comp" />
     <None Include="..\..\shaders\SkyRendering\Shadow.glsl" />
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudMaterialMinimal.glsl" />
@@ -69,8 +81,10 @@
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudIndexGen.comp" />
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudShadowMap.comp" />
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudShadowMapBlur.comp" />
+    <None Include="..\..\shaders\SkyRendering\VolumetricCloudShadowRender.comp" />
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudUpscale.comp" />
     <None Include="..\..\shaders\SkyRendering\VolumetricCloudMaterialVoxel.glsl" />
+    <None Include="..\..\shaders\SkyRendering\VolumetricCloudUpscaleFroxel.comp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
@@ -83,13 +97,13 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
-    <PlatformToolset>v142</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
     <WholeProgramOptimization>true</WholeProgramOptimization>
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
@@ -124,7 +138,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -139,7 +153,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

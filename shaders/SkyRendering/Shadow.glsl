@@ -84,9 +84,8 @@ float Filtering(sampler2DShadow shadowMap, vec3 coords, float size) {
 
 float PCSS(sampler2DShadow shadowMap, sampler2D shadow_map_depth_sampler, float blocker_kernel_size_k, float pcss_size_k
         , mat4 light_view_projection, vec3 position) {
-    vec4 xyzw = light_view_projection * vec4(position, 1.0);
-    vec3 coords = xyzw.xyz / xyzw.w;
-    coords = coords * 0.5 + 0.5;
+    vec3 coords = MulDivW(light_view_projection, position);
+    coords.xy = coords.xy * 0.5 + 0.5;
     if (coords.z >= 1.0) return 1.0;
     
     poissonDiskSamples(coords.xy);

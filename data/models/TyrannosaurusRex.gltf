@@ -1,0 +1,91 @@
+{
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5125,
+      "count": 41442,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 6909,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 6909,
+      "type": "VEC3"
+    }
+  ],
+  "asset": {
+    "generator": "tinygltf",
+    "version": "2.0"
+  },
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 165768,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 82908,
+      "byteOffset": 165768,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 82908,
+      "byteOffset": 248676,
+      "target": 34962
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 331584,
+      "uri": "TyrannosaurusRex.bin"
+    }
+  ],
+  "materials": [
+    {
+      "doubleSided": true,
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          1.0,
+          0.10000000149011612,
+          0.0,
+          1.0
+        ]
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "primitives": [
+        {
+          "attributes": {
+            "NORMAL": 2,
+            "POSITION": 1
+          },
+          "indices": 0,
+          "material": 0,
+          "mode": 4
+        }
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0
+    }
+  ],
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ]
+}

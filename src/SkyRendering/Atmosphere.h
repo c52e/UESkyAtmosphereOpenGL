@@ -4,10 +4,9 @@
 
 #include "gl.hpp"
 #include "GLReloadableProgram.h"
-#include "PerformanceMarker.h"
 #include "Serialization.h"
 
-struct AtmosphereParameters : public ISerializable {
+struct AtmosphereParameters {
     // 角度单位：degree
     // 长度单位：km
     glm::vec3 solar_illuminance{ 1.f, 1.f, 1.f };
@@ -37,35 +36,39 @@ struct AtmosphereParameters : public ISerializable {
     float multiscattering_steps = 30.0f;
     float multiscattering_mask = 1.0f; // 是否考虑多重散射[0,1]
 
-    FIELD_DECLARATION_BEGIN(ISerializable)
-        FIELD_DECLARE(solar_illuminance)
-        FIELD_DECLARE(sun_angular_radius)
-
-        FIELD_DECLARE(bottom_radius)
-        FIELD_DECLARE(thickness)
-        FIELD_DECLARE(ground_albedo)
-
-        FIELD_DECLARE(rayleigh_exponential_distribution)
-        FIELD_DECLARE(rayleigh_scattering_scale)
-        FIELD_DECLARE(rayleigh_scattering)
-
-        FIELD_DECLARE(mie_exponential_distribution)
-        FIELD_DECLARE(mie_phase_g)
-        FIELD_DECLARE(mie_scattering_scale)
-        FIELD_DECLARE(mie_scattering)
-        FIELD_DECLARE(mie_absorption_scale)
-        FIELD_DECLARE(mie_absorption)
-
-        FIELD_DECLARE(ozone_center_altitude)
-        FIELD_DECLARE(ozone_width)
-        FIELD_DECLARE(ozone_absorption_scale)
-        FIELD_DECLARE(ozone_absorption)
-
-        FIELD_DECLARE(transmittance_steps)
-        FIELD_DECLARE(multiscattering_steps)
-        FIELD_DECLARE(multiscattering_mask)
-    FIELD_DECLARATION_END()
+    int num_scattering_orders = 0; // 0表示使用multiscattering lut
 };
+
+STRUCT_FIELD_DECLARATION_BEGIN(AtmosphereParameters, ISerializable)
+    STRUCT_FIELD_DECLARE(solar_illuminance)
+    STRUCT_FIELD_DECLARE(sun_angular_radius)
+
+    STRUCT_FIELD_DECLARE(bottom_radius)
+    STRUCT_FIELD_DECLARE(thickness)
+    STRUCT_FIELD_DECLARE(ground_albedo)
+
+    STRUCT_FIELD_DECLARE(rayleigh_exponential_distribution)
+    STRUCT_FIELD_DECLARE(rayleigh_scattering_scale)
+    STRUCT_FIELD_DECLARE(rayleigh_scattering)
+
+    STRUCT_FIELD_DECLARE(mie_exponential_distribution)
+    STRUCT_FIELD_DECLARE(mie_phase_g)
+    STRUCT_FIELD_DECLARE(mie_scattering_scale)
+    STRUCT_FIELD_DECLARE(mie_scattering)
+    STRUCT_FIELD_DECLARE(mie_absorption_scale)
+    STRUCT_FIELD_DECLARE(mie_absorption)
+
+    STRUCT_FIELD_DECLARE(ozone_center_altitude)
+    STRUCT_FIELD_DECLARE(ozone_width)
+    STRUCT_FIELD_DECLARE(ozone_absorption_scale)
+    STRUCT_FIELD_DECLARE(ozone_absorption)
+
+    STRUCT_FIELD_DECLARE(transmittance_steps)
+    STRUCT_FIELD_DECLARE(multiscattering_steps)
+    STRUCT_FIELD_DECLARE(multiscattering_mask)
+
+    STRUCT_FIELD_DECLARE(num_scattering_orders)
+STRUCT_FIELD_DECLARATION_END()
 
 class Atmosphere {
 public:
@@ -81,12 +84,34 @@ public:
         return multiscattering_texture_.id();
     }
 
+    GLuint scattering_texture() const {
+        return scattering_texture_.id();
+    }
+
+    GLuint single_mie_scattering_texture() const {
+        return single_mie_scattering_texture_.id();
+    }
+
 private:
     GLBuffer atmosphere_parameters_buffer_;
 
     GLTexture transmittance_texture_;
-    GLReloadableProgram transmittance_program_;
+    GLReloadableComputeProgram transmittance_program_;
 
     GLTexture multiscattering_texture_;
     GLReloadableProgram multiscattering_program_;
+
+    GLTexture scattering_texture_;
+    GLTexture single_mie_scattering_texture_;
+    GLReloadableComputeProgram scattering_program_;
+    GLReloadableComputeProgram compute_single_scattering_;
+
+    GLReloadableComputeProgram compute_direct_irradiance_;
+    GLReloadableComputeProgram compute_scattering_density_;
+    GLReloadableComputeProgram compute_indirect_irradiance_;
+    GLReloadableComputeProgram compute_multiple_scattering_;
+
+    GLTexture delta_irradiance_texture_;
+    GLTexture delta_scattering_density_texture_;
+    GLTexture delta_multiple_scattering_texture_;
 };

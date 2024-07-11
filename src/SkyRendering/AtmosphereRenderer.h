@@ -6,8 +6,9 @@
 #include "GLReloadableProgram.h"
 #include "Earth.h"
 #include "IBL.h"
-#include "PerformanceMarker.h"
 #include "Serialization.h"
+#include "GBuffer.h"
+#include "HDRBuffer.h"
 
 struct AtmosphereRenderParameters : public ISerializable {
     float sun_direction_theta = 70.0f; // Ìì¶¥½Ç
@@ -33,12 +34,10 @@ struct AtmosphereRenderParameters : public ISerializable {
     glm::mat4 light_view_projection{};
     float blocker_kernel_size_k{};
     float pcss_size_k{};
-
-    GLuint depth_stencil_texture{};
-    GLuint normal{};
-    GLuint albedo{};
-    GLuint orm{};
     GLuint shadow_map_texture{};
+
+    const GBuffer* gbuffer{};
+    const HDRBuffer* hdrbuffer{};
 };
 
 struct AtmosphereRenderInitParameters : public ISerializable {
@@ -50,6 +49,7 @@ struct AtmosphereRenderInitParameters : public ISerializable {
     bool sky_view_lut_dither_sample_point_enable = false;
     bool use_aerial_perspective_lut = false;
     bool aerial_perspective_lut_dither_sample_point_enable = false;
+    bool use_scattering_lut = false;
     GLsizei aerial_perspective_lut_depth = 32;
 
     FIELD_DECLARATION_BEGIN(ISerializable)
@@ -62,6 +62,7 @@ struct AtmosphereRenderInitParameters : public ISerializable {
         FIELD_DECLARE(use_aerial_perspective_lut)
         FIELD_DECLARE(aerial_perspective_lut_dither_sample_point_enable)
         FIELD_DECLARE(aerial_perspective_lut_depth)
+        FIELD_DECLARE(use_scattering_lut)
     FIELD_DECLARATION_END()
 };
 
@@ -74,7 +75,8 @@ inline bool operator==(const AtmosphereRenderInitParameters& lhs, const Atmosphe
         && lhs.sky_view_lut_dither_sample_point_enable == rhs.sky_view_lut_dither_sample_point_enable
         && lhs.use_aerial_perspective_lut == rhs.use_aerial_perspective_lut
         && lhs.aerial_perspective_lut_dither_sample_point_enable == rhs.aerial_perspective_lut_dither_sample_point_enable
-        && lhs.aerial_perspective_lut_depth == rhs.aerial_perspective_lut_depth;
+        && lhs.aerial_perspective_lut_depth == rhs.aerial_perspective_lut_depth
+        && lhs.use_scattering_lut == rhs.use_scattering_lut;
 }
 
 inline bool operator!=(const AtmosphereRenderInitParameters& lhs, const AtmosphereRenderInitParameters& rhs) {
@@ -123,10 +125,11 @@ private:
     GLTexture aerial_perspective_transmittance_texture_;
     GLTexture environment_luminance_texture_;
 
+    GLReloadableComputeProgram froxel_accumulate_program_;
     GLReloadableComputeProgram sky_view_program_;
     GLReloadableComputeProgram aerial_perspective_program_;
     GLReloadableComputeProgram environment_luminance_program_;
-    GLReloadableProgram render_program_;
+    GLReloadableComputeProgram render_program_;
 
     IBL ibl_;
 };

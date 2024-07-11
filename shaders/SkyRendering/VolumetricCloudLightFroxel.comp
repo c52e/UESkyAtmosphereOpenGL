@@ -1,0 +1,52 @@
+#include "VolumetricCloudRenderCommon.glsl"
+
+layout(binding = 0) uniform sampler2D transmittance_texture;
+layout(binding = 1) uniform sampler2D blue_noise;
+layout(binding = 2) uniform sampler3D pre_light_froxel;
+
+layout(binding = 0, rgba16f) uniform image3D light_froxel;
+
+void main() {
+    ivec3 kImageSize = imageSize(light_froxel);
+    vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / vec2(kImageSize.xy);
+
+    vec3 view_dir = UvToDir(uInvMVP, uv);
+
+    float step_size = uLightFroxelMaxDist / float(kImageSize.z);
+
+    float noise = texelFetch(blue_noise, ivec2(gl_GlobalInvocationID.xy) & 0x3f, 0).x;
+    float rand = fract(noise + uFrameID * 0.61803398875);
+    
+    float dist = (float(gl_GlobalInvocationID.z) + rand) * step_size;
+    vec3 sample_pos = uCameraPos + dist * view_dir;
+    float height01 = CalHeight01(sample_pos);
+    CloudSampleResult res = DefaultCloudSampleResult();
+    SampleCloudWithCheck(CloudSampleParams(sample_pos, height01, uCameraPos, CLOUD_SAMPLE_MAIN_RAY), res);
+    float sigma_t = res.sigma_t;
+    if (sigma_t < 1e-5)
+        return;
+    float segment_optical_depth = step_size * sigma_t;
+    float tr = exp(-segment_optical_depth);
+    vec2 sun_env = vec2(0);
+    float sun_optical_depth = SampleOpticalDepth(sample_pos);
+    float cos_sun_view = dot(uSunDirection, view_dir);
+    for (int i = 0; i < 8; ++i) {
+        sun_env.r += pow(res.contribution, i) * exp(-sun_optical_depth * pow(res.attenuation, i))
+            * HenyeyGreenstein(cos_sun_view, pow(res.phase_g, i + 1));
+    }
+    sun_env.g = mix(uEnvBottomVisibility, 1.0, height01);
+    sun_env.g = sun_env.g - sun_env.g * exp(-uEnvMultiscatteringSigmaScale * sigma_t);
+    sun_env = sun_env - sun_env * tr;
+
+    vec3 luminance = sun_env.r * uSunIlluminanceScale * GetSunVisibility(transmittance_texture, sample_pos) * solar_illuminance
+                   + sun_env.g * pow(SunCosTheta(sample_pos), uEnvSunHeightCurveExp) * uEnvColorScale;
+    
+    vec4 value = vec4(luminance, segment_optical_depth) * 1e3;
+    float undithered_dist = (float(gl_GlobalInvocationID.z) + 0.5) * step_size;
+    vec3 undithered_pos = uCameraPos + undithered_dist * view_dir;
+    vec2 pre_uv = MulDivW(uReprojectMat, undithered_pos).xy * 0.5 + 0.5;
+    float pre_dist = length(MulDivW(uReprojectMatNoProjection, undithered_pos).xyz);
+    vec4 pre_value = texture(pre_light_froxel, vec3(pre_uv, pre_dist / uLightFroxelMaxDist));
+    value = mix(pre_value, value, 0.05);
+    imageStore(light_froxel, ivec3(gl_GlobalInvocationID), value);
+}

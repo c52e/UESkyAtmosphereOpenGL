@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <memory>
 #include <type_traits>
 
 #include <glm/glm.hpp>
@@ -40,25 +41,31 @@ public:
 
 	GLReloadableComputeProgram() = default;
 
-	GLReloadableComputeProgram(std::string path, const std::vector<glm::ivec2>& localsizes, std::function<std::string(const std::string&)> post_process, std::string tag = "")
+	GLReloadableComputeProgram(std::string path, const std::vector<glm::ivec2>& localsizes
+			, std::function<std::string(const std::string&)> post_process = [](const std::string& src) { return src; }
+			, std::string tag = "")
 		: GLReloadableComputeProgram(std::move(path), ToVec3(localsizes), std::move(post_process), std::move(tag)) {}
 
-	GLReloadableComputeProgram(std::string path, std::vector<glm::ivec3> localsizes, std::function<std::string(const std::string&)> post_process, std::string tag = "");
+	GLReloadableComputeProgram(std::string path, std::vector<glm::ivec3> localsizes
+			, std::function<std::string(const std::string&)> post_process = [](const std::string& src) { return src; }
+			, std::string tag = "");
+
+	GLReloadableComputeProgram(GLReloadableComputeProgram&&) = default;
 
 	GLReloadableComputeProgram& operator=(GLReloadableComputeProgram&&) = default;
 
-	void Dispatch(const glm::ivec2& globalsize) {
+	void Dispatch(const glm::ivec2& globalsize) const {
 		glm::ivec3 globalsize3(globalsize, 1);
 		Dispatch(globalsize3);
 	}
 
-	void Dispatch(const glm::ivec3& globalsize) {
+	void Dispatch(const glm::ivec3& globalsize) const {
 		const auto& localsize = data_->localsizes[data_->index];
 		auto groupsize = (globalsize + localsize - 1) / localsize;
 		glDispatchCompute(groupsize.x, groupsize.y, groupsize.z);
 	}
 
-	GLuint id() { return data_->programs[data_->index].id(); }
+	GLuint id() const { return data_->programs[data_->index].id(); }
 
 	void DrawGUI();
 

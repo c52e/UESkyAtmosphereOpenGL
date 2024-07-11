@@ -1,7 +1,6 @@
 #include "IBL.h"
 
 #include "Samplers.h"
-#include "PerformanceMarker.h"
 
 IBL::IBL() {
     env_radiance_sh_program_ = []() {
@@ -14,8 +13,7 @@ IBL::IBL() {
 
     prefilter_radiance_program_ = {
         "../shaders/Base/PrefilterRadiance.comp",
-        {{8, 4, 1}, {8, 8, 1}, {16, 4, 1}, {16, 8, 1}},
-        [](const std::string& src) { return std::string("#version 460\n") + src; }
+        {{8, 4, 1}, {8, 8, 1}, {16, 4, 1}, {16, 8, 1}}
     };
 
     prefiltered_radiance_.Create(GL_TEXTURE_CUBE_MAP);

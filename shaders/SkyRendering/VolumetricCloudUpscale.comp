@@ -1,6 +1,5 @@
+#version 460
 #include "VolumetricCloudCommon.glsl"
-
-layout(local_size_x = LOCAL_SIZE_X, local_size_y = LOCAL_SIZE_Y) in;
 
 layout(binding = 0) uniform sampler2D checkerboard_depth;
 layout(binding = 1) uniform sampler2D depth_texture;
@@ -10,12 +9,15 @@ layout(binding = 0, rgba16f) uniform image2D hdr_image;
 
 void main() {
     ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+#if FULL_RESOLUTION
+    vec4 upscaled = texelFetch(recontruct_texture, pos, 0);
+#else
     float depth = texelFetch(depth_texture, pos, 0).x;
     float linear_depth = DepthToLinearDepth(depth);
     
     ivec2 kOffsets[4] = {{-1, 1}, {1, 1}, {1, -1}, {-1, -1}}; // Same order as textureGather
     // vec4 neighbor_depths = textureGather(checkerboard_depth, (vec2(pos) + 0.5) / vec2(imageSize(hdr_image)));
-    vec4 neighbor_depths = textureGather(checkerboard_depth, (vec2((pos - 1) >> 1) + 0.5) / vec2(textureSize(checkerboard_depth, 0)));
+    vec4 neighbor_depths = textureGather(checkerboard_depth, (vec2((pos - 1) >> 1) + 1.0) / vec2(textureSize(checkerboard_depth, 0)));
     vec4 reconstructed_neighbors[4];
     float min_delta_linear_depth = 1e10;
     int nearest_i = 0;
@@ -47,6 +49,7 @@ void main() {
     }
 
 	//upscaled = texelFetch(recontruct_texture, pos >> 1, 0);
+#endif
     vec3 luminance = upscaled.rgb;
     float transmittance = upscaled.a;
     vec4 color = imageLoad(hdr_image, pos);

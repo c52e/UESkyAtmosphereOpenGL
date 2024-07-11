@@ -13,14 +13,15 @@
 #include <imgui.h>
 
 #include "ImageLoader.h"
+#include "GLProgram.h"
+#include "log.h"
 
 struct VolumetricCloudVoxelMaterial::BufferData {
 	glm::vec2 uSampleFrequency;
-	float uLodBias;
+	float uSampleLodK;
 	float uDensity;
 	glm::vec2 uSampleBias;
-	float uSampleLodK;
-	float voxel_material_padding;
+	glm::vec2 voxel_material_padding;
 };
 
 VolumetricCloudVoxelMaterial::VolumetricCloudVoxelMaterial() {
@@ -38,9 +39,14 @@ VolumetricCloudVoxelMaterial::VolumetricCloudVoxelMaterial() {
 
 #if HAS_INCLUDE_OPENVDB
     openvdb::initialize();
-	std::string path = "../data/wdas/wdas_cloud_sixteenth.vdb";
-    openvdb::io::File file(path);
-    file.open();
+    openvdb::io::File file("../data/wdas/wdas_cloud_quarter.vdb");
+	try {
+		file.open();
+	} catch(openvdb::IoError& e) {
+		LOG_INFO("\"wdas_cloud_quarter.vdb\" not found, use \"wdas_cloud_sixteenth.vdb\".")
+		file = openvdb::io::File("../data/wdas/wdas_cloud_sixteenth.vdb");
+		file.open();
+	}
     auto base_grid = file.readGrid(file.beginName().gridName());
     file.close();
     auto grid = openvdb::gridPtrCast<openvdb::FloatGrid>(base_grid);
@@ -86,20 +92,19 @@ VolumetricCloudVoxelMaterial::VolumetricCloudVoxelMaterial() {
 #endif
 }
 
-std::string VolumetricCloudVoxelMaterial::ShaderPath() {
-	return "../shaders/SkyRendering/VolumetricCloudMaterialVoxel.glsl";
+std::string VolumetricCloudVoxelMaterial::ShaderSrc() {
+	return ReadWithPreprocessor("../shaders/SkyRendering/VolumetricCloudMaterialVoxel.glsl");
 }
 
-void VolumetricCloudVoxelMaterial::Update(glm::vec2 viewport, const Camera& camera, const glm::dvec2& offset_from_first, glm::vec2& additional_delta) {
+void VolumetricCloudVoxelMaterial::Update(const UpdateParam& param, glm::vec2& additional_delta) {
 	BufferData buffer;
-	buffer.uLodBias = lod_bias_;
 	buffer.uDensity = density_;
 	buffer.uSampleFrequency = 1.0f / width_;
-	buffer.uSampleBias = glm::vec2((offset_from_first + glm::dvec2(base_)) / glm::dvec2(width_));
+	buffer.uSampleBias = glm::vec2((param.offset_from_first + glm::dvec2(base_)) / glm::dvec2(width_));
 
 	auto max_width = static_cast<float>(glm::max(voxel_dim_.x, glm::max(voxel_dim_.y, voxel_dim_.z)));
-	auto tan_half_fovy = glm::tan(glm::radians(camera.fovy) * 0.5f);
-	buffer.uSampleLodK = max_width * tan_half_fovy / (std::min(width_.x, width_.y) * static_cast<float>(glm::min(viewport.x, viewport.y)));
+	buffer.uSampleLodK = glm::exp2(lod_bias_) * max_width * param.camera.tangent_half_fovy() * 2.0f
+		/ (std::min(width_.x, width_.y) * static_cast<float>(param.viewport.y));
 
 	glNamedBufferSubData(buffer_.id(), 0, sizeof(buffer), &buffer);
 }
@@ -117,6 +122,9 @@ float VolumetricCloudVoxelMaterial::GetSigmaTMax() {
 
 void VolumetricCloudVoxelMaterial::DrawGUI() {
 	static float density_slider_max = 100.0f;
+	// http://www.specinc.com/extinctiometer-theory
+	// Cumulus clouds may have extinction coefficients on the order of 200 - 300 km^-1,
+	// while thin cirrus clouds may have an extinction coefficient on the order of 0.5 - 5 km^-1.
 	ImGui::SliderFloat("Density Slider Max", &density_slider_max, 20.0f, 1000.0f);
 	ImGui::SliderFloat("Density", &density_, 0.0f, density_slider_max);
 	ImGui::SliderFloat("Lod Bias", &lod_bias_, -2.0f, 10.0f);

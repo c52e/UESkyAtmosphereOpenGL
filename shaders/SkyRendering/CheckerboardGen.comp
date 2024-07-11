@@ -1,4 +1,4 @@
-layout(local_size_x = LOCAL_SIZE_X, local_size_y = LOCAL_SIZE_Y) in;
+#version 460
 
 layout(binding = 0) uniform sampler2D depth_texture;
 
@@ -6,9 +6,13 @@ layout(binding = 0, r32f) uniform image2D checkerboard_depth;
 
 void main() {
     ivec2 index = ivec2(gl_GlobalInvocationID.xy);
+#if FULL_RESOLUTION
+    imageStore(checkerboard_depth, index, vec4(texelFetch(depth_texture, index, 0)));
+#else
     vec2 coord = (vec2(index) + 0.5) / vec2(imageSize(checkerboard_depth));
     vec4 v = textureGather(depth_texture, coord);
     bool bmax = ((index.x & 1) == (index.y & 1));
     float d = bmax ? max(max(v.x, v.y), max(v.z, v.w)) : min(min(v.x, v.y), min(v.z, v.w));
     imageStore(checkerboard_depth, index, vec4(d));
+#endif
 }

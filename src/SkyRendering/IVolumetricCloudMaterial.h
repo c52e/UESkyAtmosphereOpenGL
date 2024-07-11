@@ -12,9 +12,16 @@ public:
 
     virtual ~IVolumetricCloudMaterial() = default;
 
-    virtual std::string ShaderPath() = 0;
+    virtual std::string ShaderSrc() = 0;
 
-    virtual void Update(glm::vec2 viewport, const Camera& camera, const glm::dvec2& offset_from_first, glm::vec2& additional_delta) {}
+    struct UpdateParam {
+        glm::vec2 viewport;
+        const Camera& camera;
+        glm::dvec2 offset_from_first;
+        glm::dmat4 model;
+    };
+
+    virtual void Update(const UpdateParam& param, glm::vec2& additional_delta) {}
 
     virtual void Bind() = 0;
 
@@ -22,7 +29,6 @@ public:
 
     virtual float GetSigmaTMax() = 0;
 
-protected:
     FIELD_DECLARATION_BEGIN(ISerializable)
     FIELD_DECLARATION_END()
 };

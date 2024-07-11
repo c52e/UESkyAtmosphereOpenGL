@@ -3,8 +3,11 @@
 #include <iostream>
 #include <sstream>
 #include <algorithm>
+#include <regex>
 
 #include <imgui.h>
+
+#include "log.h"
 
 void GLReloadableProgram::Reload() {
 	if (loader_) {
@@ -12,7 +15,7 @@ void GLReloadableProgram::Reload() {
 			program_ = loader_();
 		}
 		catch (std::exception& e) {
-			std::cout << e.what() << std::endl;
+			LOG_ERROR("{}", e.what());
 		}
 	}
 }
@@ -26,7 +29,10 @@ void GLReloadableProgram::ReloadAll() {
 GLReloadableComputeProgram::GLReloadableComputeProgram(std::string path, std::vector<glm::ivec3> localsizes
 		, std::function<std::string(const std::string&)> post_process, std::string tag) {
 	data_ = std::make_unique<Data>();
-	data_->display_text = tag + ": " + path;
+	data_->display_text = path;
+	if (!tag.empty()) {
+		data_->display_text += " (" + tag + ")";
+	}
 	data_->path = std::move(path);
 	data_->post_process = std::move(post_process);
 	data_->localsizes_str.reserve(localsizes.size());
@@ -84,8 +90,16 @@ void GLReloadableComputeProgram::Construct(int i) {
 		ss << "#define LOCAL_SIZE_X " << std::to_string(localsize.x) << "\n";
 		ss << "#define LOCAL_SIZE_Y " << std::to_string(localsize.y) << "\n";
 		ss << "#define LOCAL_SIZE_Z " << std::to_string(localsize.z) << "\n";
-		ss << ReadWithPreprocessor(p->path.c_str());
-		return GLProgram(p->post_process(ss.str()).c_str());
+
+		ss << "layout(local_size_x = LOCAL_SIZE_X, local_size_y = LOCAL_SIZE_Y, local_size_z = LOCAL_SIZE_Z) in;\n";
+		auto src = p->post_process(ReadWithPreprocessor(p->path.c_str()));
+		std::regex pattern("#version[ \t]+\\d+[ \t]*\n");
+		std::smatch match;
+		std::regex_search(src, match, pattern);
+
+		auto i = match.position() + match.length();
+		src = src.substr(0, i) + ss.str() + src.substr(i, src.size() - i);
+		return GLProgram(src.c_str(), { p->display_text });
 	});
 }
 

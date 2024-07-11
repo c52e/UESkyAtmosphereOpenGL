@@ -1,0 +1,22 @@
+#version 460
+
+#include "VolumetricCloudCommon.glsl"
+
+layout(binding = 0, rgba16f) uniform image3D light_froxel;
+layout(binding = 1, rgba16f) uniform image3D light_accumulate_froxel;
+
+void main() {
+    ivec3 kImageSize = imageSize(light_froxel);
+    vec2 uv = (vec2(gl_GlobalInvocationID.xy) + 0.5) / vec2(kImageSize.xy);
+
+    vec3 view_dir = UvToDir(uInvMVP, uv);
+
+    vec3 luminance = vec3(0);
+    float transmittance = 1.0;
+    for (int z = 0; z < kImageSize.z; ++z) {
+        vec4 seg = imageLoad(light_froxel, ivec3(gl_GlobalInvocationID.xy, z)) * 1e-3;
+        luminance += transmittance * seg.rgb;
+        transmittance *= exp(-seg.a);
+        imageStore(light_accumulate_froxel, ivec3(gl_GlobalInvocationID.xy, z), vec4(luminance, transmittance));
+    }
+}

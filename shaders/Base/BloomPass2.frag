@@ -1,6 +1,7 @@
 #version 460
 TAG_CONF
-#include"Blur.glsl"
+#include "Common.glsl"
+#include "Blur.glsl"
 in vec2 vTexCoord;
 layout(location = 0) out vec4 FragColor;
 layout(binding = 0) uniform sampler2D tex;
@@ -34,9 +35,11 @@ void main() {
 	vec3 luminance = texelFetch(tex, ivec2(gl_FragCoord.xy), 0).rgb;
 	vec2 wh = textureSize(tex, 0);
 	luminance += Blur(bloom_mid_tex, vTexCoord.xy, vec2(filter_width * (wh.y / wh.x), 0)).rgb * bloom_intensity;
-	vec3 color = pow(ToneMapping(luminance, exposure), vec3(1.0 / 2.2));
+	vec3 color = ToneMapping(luminance, exposure);
 #if DITHER_ENABLE
-	color += texelFetch(blue_noise, ivec2(gl_FragCoord.xy) & 0x3f, 0).x / 255.0;
+	vec3 srgb_color = Linear2sRGB(color);
+	vec3 color_up_bound = sRGB2Linear(srgb_color + 1.0 / 255.0);
+	color = mix(color, color_up_bound, texelFetch(blue_noise, ivec2(gl_FragCoord.xy) & 0x3f, 0).x);
 #endif
 	FragColor = vec4(color, 1.0);
 }

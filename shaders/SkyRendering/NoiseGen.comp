@@ -1,4 +1,4 @@
-layout(local_size_x = LOCAL_SIZE_X, local_size_y = LOCAL_SIZE_Y, local_size_z = LOCAL_SIZE_Z) in;
+#version 460
 
 #include "../Base/Noise.glsl"
 
@@ -49,7 +49,7 @@ float WorleyFBM(vec3 p, NoiseCreateInfo create_info) {
     return res;
 }
 
-#ifdef DISPLACEMENT_GEN
+#if DISPLACEMENT_GEN
 
 layout(std140, binding = 1) uniform BufferData {
 	NoiseCreateInfo uPerlin;
@@ -69,7 +69,7 @@ void main() {
 }
 #endif
 
-#ifdef CLOUD_MAP_GEN
+#if CLOUD_MAP_GEN
 
 layout(std140, binding = 1) uniform BufferData {
 	NoiseCreateInfo uDensity;
@@ -87,7 +87,7 @@ void main() {
 }
 #endif
 
-#ifdef DETAIL_MAP_GEN
+#if DETAIL_MAP_GEN
 
 layout(std140, binding = 1) uniform BufferData {
 	NoiseCreateInfo uPerlin;

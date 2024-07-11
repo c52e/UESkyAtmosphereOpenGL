@@ -3,6 +3,6 @@ layout(std140, binding = 3) uniform VolumetricCloudMaterialBufferData {
 	float uDensity;
 };
 
-float SampleSigmaT(vec3 pos, float height01) {
-    return uDensity;
+void SampleCloud(CloudSampleParams params, inout CloudSampleResult res) {
+    res.sigma_t = uDensity;
 }

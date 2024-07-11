@@ -14,7 +14,17 @@ glm::mat4 Camera::ViewMatrix() const {
 	return glm::lookAt(position_, position_ + front_, up_);
 }
 
-glm::mat4 Camera::ProjectionMatrix() const {
+glm::mat4 Camera::ProjectionInvertedInfinity() const {
+	float tanHalfFovy = glm::tan(glm::radians(fovy) * 0.5f);
+	return glm::mat4{
+		{1.0f / (aspect_ * tanHalfFovy), 0.0f, 0.0f, 0.0f},
+		{0.0f, 1.0f / tanHalfFovy, 0.0f, 0.0f},
+		{0.0f, 0.0f, 0.0f, -1.0f},
+		{0.0f, 0.0f, zNear, 0.0f}
+	};
+}
+
+glm::mat4 Camera::ProjectionFarClip(float zFar) const {
 	return glm::perspective(glm::radians(fovy), aspect_, zNear, zFar);
 }
 
